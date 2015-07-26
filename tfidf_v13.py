@@ -1,99 +1,49 @@
 '''
 author: sanja7s
 
-V13: default tokenizer will now be instead token_pattern=u'(?u)\b\w\w+\b'
-token_pattern=u'(?u)\b[a-zA-Z][a-zA-Z]+\b' NOno this is r'\b[a-zA-Z][a-zA-Z]+\b'
-*Note \w == [a-zA-Z0-9_] and I think I don't need either 0-9 either _
-Let's try.
-token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b'
+This code calculates a knowledge base that can be used to calculate semantic relatendess (SR) from Wikipedia data according to Explicit Semantic Analysis (ESA) algorithm [Gabrilovich et al. 2007].
 
+Theory:
+Basic idea of ESA is to process (latest) Wikipedia dump and determine importance of different words (terms) in different articles using TF-IDF (term frequency - inverse document frequency) algorithm. An intermediary result is a set of vectors for each Wikipedia article (concept) with corresponding TF-IDF values for words that are found relevant in them. Then the inverse vector for each word is calculated (containing its TF-IDF values in different articles), and such vectors serve to calculate semantic relatedness of the words. Basically, the idea is that the more similar words are, more common articles will be found in their concept vectors (and with higher TF-IDF). 
 
-V12: Hieus method is not normalized, no log transformation, we just use raw TF values. I will now once again try that, but using
-parameters min_df = 3 and max_df = 0.7
-reasoning: if we want to compare words based on similar concepts, then we probably also want those to have similar tfidf scales.
-ok, article lengths also represent to us their importance in "general" in some way. perhaps :)
+Implementation:
+We calculate TF-IDF for the non-stopwords words in all the articles. We use sklearn TfidfTransformer that builds a vocabulary omitting English stop_words (experimenting with minimum document frequency for a word, and maximum percent of articles in which the word appears -- more details on this under Parameters). TfidfTransformer outputs a sparse scipy matrix that has words as columns, articles as rows, and corresponding TF-IDF values as elements. The sparce scipy matrix is well suited for our case since each article contains a small percent of the words, so the resulting TF-IDF matrix is quite sparse. From such a TF-IDF matrix, we obtain a concept vector (CV) for each word, by simply accessing the columns of the matrix.  
 
-I am checking for a really small value >= 2 so that we get almost all concepts and then i can try thresholding as Hieu
+The final output of this code pipeline is a text file formated as a set of single-line json objects that is suitable to be imported to MongoDB where our knwoledge base is to be stored (note: Mongo limit of a single json object is 16MB).
 
-this gave output og 19G and many lines biggern than 16MB. That pointed me out to many numbers trated as token == words in my
-case and i want to remove them. After short reading on regular epxressions, I think I will just change the default tokenizer
-in the next version.
-
-V11: the check while saving would be 
-if value > 0:
-which means basically to save everything. but I am afraid that would mean that I will have some json element
-larger than 16MB and then I cannot save it.
-
-so instead, I will implement some check. I will implement the one as descirbed in (Gavrilovich, 2009)
- 
-
-V10: like V9 just applying the log tranform 
-tfidf = TfidfTransformer(norm=None, sublinear_tf=True)
-
-V9: going back to max_df = 0.7 as the previously tried 0.1 causes loss of important words such as time and life
-however, unlike V7, we now keep min_df = 3, so now I can measure a case that makes a bit more sense according to me
-and that was mentioned by Gabrilovich (he does not introduce max_df, so in the end, if needed, I can try without it, too)
 Articles #:  1829625
 Words #:  1294606
-Also, I did not apply the log tranform here
 
-V8: going back to max_df = 0.1. Also, we thought that my min_df is maybe too large.
-Because this means that I ask that the term appears 8 times in different documents;
-Gabrilovich used here min_df = 3, so I will try that now, too.
-M, N = CSC_matrix.shape
-Articles #:  1829625
-Words #:  1294321
-I also changed here the value where I cut off while saving -- to be 8
+Parameters:
+- minimum document frequency for a word (min_df = 3, min_df = 8 (Hieu) )
+- maximum percent of articles in which the word appears (max_df = 0.7, max_df = 0.1 (Hieu))
+- default tokenizer is token_pattern=u'(?u)\b\w\w+\b'  (note: \w == [a-zA-Z0-9_])
+We set token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b'
 
-V7: we added normalization of freq_term_matrix with Antti as below:
-freq_term_matrix.data = 1 + np.log( freq_term_matrix.data )
-so that we follow approach by Gabrilovich
-also we improved some parts of my code with zip and also saved for the first time actually CSR matrix
+- ESA method normalizes the data. 
+(tfidf = TfidfTransformer(norm=None, sublinear_tf=True), freq_term_matrix.data = 1 + np.log( freq_term_matrix.data ) )
+- Hieu's method (Hieu et al. 2013) is not normalized: no log transformation, just use raw TF values.  if we want to compare words based on similar concepts, then we probably also want those to have similar tfidf scales. ok, article lengths also represent to us their importance in "general" in some way. perhaps :)
+
+- we threshold the TF-IDF values with 0.12 based on (Hieu et al. 2013)
 
 
-V6: first implmentation with TF-IDF as non-normalized. In this way, I can test Hieu's
-approach, since his results are better than the original; and he used no filtering of
-articles. I have put here min_df = 8 and max_df = 0.7. The second paramether perhaps 
-makes sense in a smaller corpus, but in this one I was probably better of using 0.1
-as suggested by Hieu.
+Cleaning input:
 
-CHECK: if articles with dates are still present here
-
-DONE: pruning disambiguation pages with "may refer to:"
+      pruning disambiguation pages with "may refer to:"
       pruning categories done in previous step, wikiextractor by Attardi
       pruning too short articles (< 200 words)
       pruning rare words (< 3 articles) (min_df)
       pruning too frequent (= corpus specific stopwords) present in >10% articles (max_df)
 
-This code calculates a knowledge base for semantic relatendess (SR) from Wikipedia data
-according to Explicit Semantic Analysis (ESA) algorithm [Gabrilovich et al. 2007].
-
-The input data is beforehand preprocessed from an English Wikipedia dump
-2015-03-07 (enwiki-20150304-pages-articles.xml.bz2 10.9 GB) 
-using the wikiextractor code from https://github.com/attardi/wikiextractor by Giuseppe Attardi.
-
-TF-IDF is calculated for the words in all the articles. We use sklearn TfidfTransformer
-that builds a vocabulary omitting English stop_words, with minimum document frequency for a word 3,
-and maximum percent of articles in which the word appears 10%.
-TfidfTransformer gives us a sparse scipy matrix that has words as columns, articles as rows,
-and corresponding TF-IDF values as elements.
-The sparce scipy matrix is well suited for our case since each article contains a small % of the words, 
-so the resulting TF-IDF matrix is quite sparse.
-
-From such a TF-IDF matrix, we obtain a concept vector (CV) for each word, containing articles and
-corresponding TF-IDF values. We threshold the TF-IDF values with 0.12 based on (Hieu et al. 2013).
-The concept vectors are obtained by slicing columns of scipy matrix.
-
-The final output of this code is a text file formated as a set of single line json objects
-that is suitable to be imported to MongoDB where our knwoledge base will be stored.
 
 
 References
 ----------
 Gabrilovich, Evgeniy, and Shaul Markovitch. "Computing Semantic Relatedness Using Wikipedia-based Explicit Semantic Analysis." IJCAI. Vol. 7. 2007.
-Hieu, Nguyen Trung, Mario Di Francesco, and Antti Ylä-Jääski. "Extracting knowledge from wikipedia articles through distributed semantic analysis." Proceedings of the 13th International Conference on Knowledge Management and Knowledge Technologies. ACM, 2013.
 Gabrilovich, Evgeniy, and Shaul Markovitch. "Wikipedia-based semantic interpretation for natural language processing." Journal of Artificial Intelligence Research (2009): 443-498.
+Hieu, Nguyen Trung, Mario Di Francesco, and Antti Ylä-Jääski. "Extracting knowledge from wikipedia articles through distributed semantic analysis." Proceedings of the 13th International Conference on Knowledge Management and Knowledge Technologies. ACM, 2013.
 '''
+
 import io, json, os
 import numpy as np
 import scipy
