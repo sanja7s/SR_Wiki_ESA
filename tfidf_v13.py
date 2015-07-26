@@ -37,9 +37,6 @@ We set token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b'
 
 
 
-
-
-
 References
 ----------
 Gabrilovich, Evgeniy, and Shaul Markovitch. "Computing Semantic Relatedness Using Wikipedia-based Explicit Semantic Analysis." IJCAI. Vol. 7. 2007.
@@ -61,17 +58,16 @@ from sklearn.feature_extraction.text import TfidfTransformer
 import itertools
 import collections
 
-path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/OUTPUT/wikiALL_titles_url_out_no_templates"
-#path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/INPUT/testINPUT"
-
-# count how many articles (i.e., lines) are read
-cnt_articles = 0
-article_ids = defaultdict(int)
-article_urls = defaultdict(int)
-train_set_dict = defaultdict(int) 
-
 # One code found online for preprocessing Wikipedia data is wikiextractor by Prof. Attardi http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
 def read_in_wikiextractor_output():
+	path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/OUTPUT/wikiALL_titles_url_out_no_templates"
+	#path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/INPUT/testINPUT"
+
+	# count how many articles (i.e., lines) are read
+	cnt_articles = 0
+	article_ids = defaultdict(int)
+	article_urls = defaultdict(int)
+	train_set_dict = defaultdict(int)
 	# I adapted wikiextractor to output one article per single line
 	# here we read in such output
 	# read in all the files from all the folders (Attardi divides output in many files in many folders)
@@ -104,69 +100,41 @@ def read_in_wikiextractor_output():
 						train_set_dict[cnt_articles] = aline
 						cnt_articles += 1
 			fin.close()
-	print "INSERTED articles #: ", cnt_articles
+	print "INSERTED articles: ", cnt_articles
+	return cnt_articles, article_ids, article_urls, train_set_dict
 
-
-train_set = train_set_dict.values()
-# use the whole (Wiki) set as the train set
-test_set = train_set
-
-# instantiate vectorizer with English language, using stopwords and
-# min_df = 3 and max_df = 70%
-#vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.7, token_pattern=u'(?u)\b[a-zA-Z][a-zA-Z]+\b')
-#vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.7, tokenizer = word_tokenize, token_pattern=u'(?u)\b[a-zA-Z][a-zA-Z]+\b')
-#vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.7, analyzer=partial(regexp_tokenize, pattern=u'(?u)\b[a-zA-Z][a-zA-Z]+\b'))
-vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.7, token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b')
-
-# we apply the vectorizer to the train set. 
-# it will count all the words that appear at least 3 times in one article
-# and in no more than 70% as part of my vocabulary_
-vectorizer.fit_transform(train_set)
-
-# vectorizer transform will apply the vocabulary from the train set to the
-# test set. In my case, they are the same set: whole Wikipedia.
-freq_term_matrix = vectorizer.transform(test_set)
-
-# this is a log transformation as applied in (Gabrilovich, 2009), i.e., that is
-# how he defines TF values. In case of TF = 0, this shall not affect such value
-#freq_term_matrix.data = 1 + np.log( freq_term_matrix.data )
-
-# let me filter this one. I want to remove all articles == concepts
-# that are left with less than 100 important words == terms idenitifed here
-# that will be a bit more strict than in the paper (Gabrilovtch & Markovitch, 2009)
-# but since Wikipedia is by now bigger, that should work fine
-
-M1, N1 = freq_term_matrix.shape
-# freq_term_matrix to calculate tfidf values
-tfidf = TfidfTransformer(norm=None, sublinear_tf=False)
-# tfidf uses the freq_term_matrix to calculate IDF
-tfidf.fit(freq_term_matrix)
-# finally, tfidf will calculate TFIDF values with transform()
-tf_idf_matrix = tfidf.transform(freq_term_matrix)
-
-'''
-# function to save to file the raw CSR 
-# just in case somthing breaks with my pritning of the desired txt output from
-# the CSR/CSC matrix, I can use this function to save it as it is in npy format
-def save_sparse_csr(filename,array):
-    np.savez(filename,data = array.data ,indices=array.indices,
-             indptr =array.indptr, shape=array.shape )
-# just in case save the matrix
-filename = "tf_idf_CSR_12"
-save_sparse_csr(filename,tf_idf_matrix)
-'''
-
-# now we put our matrix to CSC format (as it helps with accessing columns
-# for inversing the vectors to words concept vectors)
-CSC_matrix = tf_idf_matrix.tocsc() 
-
-# we will need vocabulary_ to be accessible by the index of the word
-# so we inverse the keys and values of the dictionary
-word_index = dict((v, k) for k, v in vectorizer.vocabulary_.iteritems())
-
-M, N = CSC_matrix.shape
-print "Articles #: ", M
-print "Words #: ", N
+# The code below that calculates TF-IDF is adapted from his blogpost by Christian S. Perone http://blog.christianperone.com/?p=1589
+# This code uses scikits.learn Python module for machine learning http://scikit-learn.sourceforge.net/stable/
+def tfidf_normalize(cnt_articles, article_ids, article_urls, train_set_dict):
+	# use the whole (Wiki) set as both the train and test set
+	train_set = train_set_dict.values()
+	test_set = train_set
+	# instantiate vectorizer with English language, using stopwords and set min_df, max_df parameters and the tokenizer
+	vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.7, token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b')
+	# by appling the vectorizer instance to the train set
+	# it will create a vocabulary from all the words that appear in at least min_df and in no more than max_df documents in the train_set
+	vectorizer.fit_transform(train_set)
+	# vectorizer transform will apply the vocabulary from the train set to the test set. In my case, they are the same set: whole Wikipedia.
+	# this means that each article will get representation based on the words from the vocabulary and their TF-IDF values in the Scipy sparse output matricx
+	freq_term_matrix = vectorizer.transform(test_set)
+	# this is a log transformation as applied in (Gabrilovich, 2009), i.e., that is
+	# how he defines TF values. In case of TF = 0, this shall not affect such value
+	# freq_term_matrix.data = 1 + np.log( freq_term_matrix.data )
+	M1, N1 = freq_term_matrix.shape
+	# instantiate tfidf trnasformer
+	tfidf = TfidfTransformer(norm="l2", sublinear_tf=True)
+	# tfidf uses the freq_term_matrix to calculate IDF values for each word (element of the vocabulary)
+	tfidf.fit(freq_term_matrix)
+	# finally, tfidf will calculate TFIDF values with transform()
+	tf_idf_matrix = tfidf.transform(freq_term_matrix)
+	# now we put our matrix to CSC format (as it helps with accessing columns for inversing the vectors to words' concept vectors)
+	CSC_matrix = tf_idf_matrix.tocsc() 
+	# we need vocabulary_ to be accessible by the index of the word so we inverse the keys and values of the dictionary and put them to new dictionary word_index
+	word_index = dict((v, k) for k, v in vectorizer.vocabulary_.iteritems())
+	M, N = CSC_matrix.shape
+	print "Articles: ", M
+	print "Words: ", N
+	return M, N, CSC_matrix, word_index
 
 # save desired output for the next step (input to MongoDB)
 # CV = word, article_id1:tfidf1 ... article_idN:tfidfN *FORMAT 4 JSON*
@@ -216,6 +184,10 @@ def test_before_save_CV_with_pruning(m, fn):
 			if CNT == 6000:
 				return
 
+
+
+cnt_articles, article_ids, article_urls, train_set_dict = read_in_wikiextractor_output()
+M, N, CSC_matrix, word_index = tfidf(cnt_articles, article_ids, article_urls, train_set_dict)
 # file to save the matrix
 filename2 = "tf_idf_ALL137s.json"
 # save_CV(testM, filename2)
