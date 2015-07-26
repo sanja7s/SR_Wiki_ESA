@@ -49,16 +49,21 @@ Hieu, Nguyen Trung, Mario Di Francesco, and Antti Ylä-Jääski. "Extracting kno
 import io, json, os
 import numpy as np
 import scipy
-# dict for zipping article ids and urls with the counter ids from this code  
 from collections import defaultdict
 # CountVectorizer counts the number of times a term occurs in the document
 from sklearn.feature_extraction.text import CountVectorizer
 # TfidfTransformer will use output from CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
 import itertools
-import collections
+# to parse xml at some points
+import xml.etree.cElementTree as ET
+import re, random
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+# to prune date articles
+from dateutil.parser import *
 
-# One code found online for preprocessing Wikipedia data is wikiextractor by Prof. Attardi http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
+# Use code found online for preprocessing Wikipedia data -- wikiextractor by Prof. Attardi http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
 def read_in_wikiextractor_output():
 	path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/OUTPUT/wikiALL_titles_url_out_no_templates"
 	#path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/INPUT/testINPUT"
@@ -103,9 +108,126 @@ def read_in_wikiextractor_output():
 	print "INSERTED articles: ", cnt_articles
 	return cnt_articles, article_ids, article_urls, train_set_dict
 
+
+
+#####################################################################################################################
+# Use Wiki preprocessor given by Gabrilovich
+
+def read_inlinks(f = "20051105_pages_articles.stat.inlinks"):
+	articles_stat_links = defaultdict(int)
+	for line in open(f, "r"):
+		page, links = line.split()
+		page = int(page)
+		links = int(links)
+		articles_stat_links[page] = links
+	return articles_stat_links
+
+def process_keywords(aid, text, title, cnt_articles, article_ids, train_set_dict, outfile):
+	# use nltk to find english stopwords and tokenize the text
+	# while I need to join the tokens later for the purpose of TfIDFTokenizer, a good thing is that now I still clean the stopwords, 
+	# which, I think, speeds up the CountVectorizer tokenizer later
+	stopset = set(stopwords.words('english'))
+	tokens=word_tokenize(text.decode('utf-8'))
+    	tokens = [w for w in tokens if not w in stopset]
+    # to really do all as Gabrilovich, we remove finally also articles with less than 100 keywords
+	if len(tokens) > 100:
+		train_set_dict[cnt_articles] = ' '.join(tokens)
+		article_ids[cnt_articles] = int(aid)
+		if cnt_articles % 10000 == 0:
+			print cnt_articles, aid, title
+		outfile.write(str(aid) + '\t' + str(cnt_articles) + '\t' + str(title) + '\n')
+		cnt_articles += 1
+	return cnt_articles
+
+def process_page(buf, cnt_articles, article_ids, train_set_dict, outfile):
+	# prune all the unecessary pages (articles based on type)
+	if "This is a disambiguation page" in buf:
+		#print "disambiguation"
+		return cnt_articles
+	if "<title>Category:" in buf:
+		#print "category"
+		return cnt_articles
+	if "<title>List of" in buf:
+		return cnt_articles
+	if "<title>Timeline of" in buf:
+		return cnt_articles 
+	if "<title>Template:" in buf:
+		return cnt_articles
+	if "<title>Index of:" in buf:
+		return cnt_articles 
+	page = ET.fromstring(buf)
+	outlinks = page.attrib['outlinks']
+	aid = page.attrib['id']
+	if page.attrib['stub'] == "1":
+		return cnt_articles
+	if int(outlinks) < 5:
+		return cnt_articles
+	if asl[int(aid)] < 5:
+		return cnt_articles
+	t = re.search(r'<title>(.*)</title>', buf, re.DOTALL)
+	title = t.group(1) if t else None
+	# if title of the article qualifies as date, prune it, too
+	try:
+		parse(title)
+		#print title
+		return cnt_articles
+	except:
+		ValueError or TypeError
+	# double check for disambiguation since Wiki is not clean
+	if "(disambiguation)" in title:
+		return cnt_articles
+	# finally, if page passed the pruning phase, extract only its text
+	m = re.search(r'<text>(.*)</text>', buf, re.DOTALL)
+    text = m.group(1) if m else None
+    # I choose not to care about headers and other xml markup that might be left
+	text = re.sub(r'<(.*)>', '', text, re.DOTALL)
+	# for the next step, I need one-line articles, so we replace new lines with spaces
+	text = text.replace('\n', ' ')
+	# finally process the text for non-stopwords (conceptually that code could have been here, but is cleaner this way)
+	cnt_articles = process_keywords(aid, text, title, cnt_articles, article_ids, train_set_dict, outfile)
+	return cnt_articles
+
+def process_hgw_xml(f_in = "20051105_pages_articles.hgw.xml",f_articles_out = "v4_AID_hgw_titles.tsv"):
+	# count how many articles (i.e., lines) are read
+	outfile = open(f_articles_out,'w')
+	outfile.write('_id' + '\t' + 'our_id' + '\t' + 'title' + '\n')
+	cnt_articles = 0
+	cnt_all_articles = 0
+	article_ids = defaultdict(int)
+	train_set_dict = defaultdict(int) 
+	inputbuffer = ''
+	with open(f_in,'r') as input_file:
+		# the code loops through the input, forms pages when they are found, and sends them to process_page for further steps
+	    append = False
+	    for line in input_file:	
+			if '<page id=' in line:
+				inputbuffer = line
+				append = True
+	  		elif '</page>' in line:
+				inputbuffer += line
+				cnt_all_articles += 1
+	 			append = False
+				try:
+					cnt_articles = process_page(inputbuffer, cnt_articles, article_ids, train_set_dict, outfile)
+				except TypeError as e:
+					print e
+				inputbuffer = None
+				del inputbuffer #probably redundant...
+			elif append:
+				inputbuffer += line
+	outfile.close()
+	print "INSERTED articles: ", cnt_articles, "ALL READ articles: ", cnt_all_articles
+	return cnt_articles, article_ids, train_set_dict
+
+
+cnt_articles, article_ids, train_set_dict = process_hgw_xml()
+
+
+#####################################################################################################################
+
 # The code below that calculates TF-IDF is adapted from his blogpost by Christian S. Perone http://blog.christianperone.com/?p=1589
 # This code uses scikits.learn Python module for machine learning http://scikit-learn.sourceforge.net/stable/
-def tfidf_normalize(cnt_articles, article_ids, article_urls, train_set_dict):
+def tfidf_normalize(cnt_articles, article_ids, article_urls = None, train_set_dict):
 	# use the whole (Wiki) set as both the train and test set
 	train_set = train_set_dict.values()
 	test_set = train_set
@@ -120,7 +242,6 @@ def tfidf_normalize(cnt_articles, article_ids, article_urls, train_set_dict):
 	# this is a log transformation as applied in (Gabrilovich, 2009), i.e., that is
 	# how he defines TF values. In case of TF = 0, this shall not affect such value
 	# freq_term_matrix.data = 1 + np.log( freq_term_matrix.data )
-	M1, N1 = freq_term_matrix.shape
 	# instantiate tfidf trnasformer
 	tfidf = TfidfTransformer(norm="l2", sublinear_tf=True)
 	# tfidf uses the freq_term_matrix to calculate IDF values for each word (element of the vocabulary)
