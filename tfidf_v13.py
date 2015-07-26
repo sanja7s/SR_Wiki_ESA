@@ -1,46 +1,51 @@
 '''
 author: sanja7s
 
-This code calculates a knowledge base that can be used to calculate semantic relatendess (SR) from Wikipedia data according to Explicit Semantic Analysis (ESA) algorithm [Gabrilovich et al. 2007].
+This code calculates a knowledge base that can be used to calculate semantic relatendess (SR) from Wikipedia data according to Explicit Semantic Analysis (ESA) algorithm (Gabrilovich et al. 2007).
 
 Theory:
-Basic idea of ESA is to process (latest) Wikipedia dump and determine importance of different words (terms) in different articles using TF-IDF (term frequency - inverse document frequency) algorithm. An intermediary result is a set of vectors for each Wikipedia article (concept) with corresponding TF-IDF values for words that are found relevant in them. Then the inverse vector for each word is calculated (containing its TF-IDF values in different articles), and such vectors serve to calculate semantic relatedness of the words. Basically, the idea is that the more similar words are, more common articles will be found in their concept vectors (and with higher TF-IDF). 
+Basic idea of ESA is to process (latest) Wikipedia dump and determine importance of different words (terms) in different articles using TF-IDF (term frequency - inverse document frequency) algorithm. An intermediary result is a set of vectors for each Wikipedia article (concept) with corresponding TF-IDF values for words that are found relevant in them. Then the inverse vector for each word is calculated (containing its TF-IDF values in different articles), and such a vector serves to calculate SR value of the words. Basically, the idea is that the more similar the words are, more common articles will be found in their concept vectors (and with higher TF-IDF). 
 
 Implementation:
-We calculate TF-IDF for the non-stopwords words in all the articles. We use sklearn TfidfTransformer that builds a vocabulary omitting English stop_words (experimenting with minimum document frequency for a word, and maximum percent of articles in which the word appears -- more details on this under Parameters). TfidfTransformer outputs a sparse scipy matrix that has words as columns, articles as rows, and corresponding TF-IDF values as elements. The sparce scipy matrix is well suited for our case since each article contains a small percent of the words, so the resulting TF-IDF matrix is quite sparse. From such a TF-IDF matrix, we obtain a concept vector (CV) for each word, by simply accessing the columns of the matrix.  
-
-The final output of this code pipeline is a text file formated as a set of single-line json objects that is suitable to be imported to MongoDB where our knwoledge base is to be stored (note: Mongo limit of a single json object is 16MB).
+Preprocessing: Wikipedia data comes in xml format and can be quite messy. Thus we need to clean it (preprocess). The preprocessing stop is described below separately.
+TF-IDF calculation: We calculate TF-IDF for the non-stopwords words in all the articles. We use sklearn TfidfTransformer that builds a vocabulary omitting English stop_words (experimenting with minimum document frequency for a word, and maximum percent of articles in which the word appears -- more details on this under Parameters). TfidfTransformer outputs a sparse scipy matrix that has words as columns, articles as rows, and corresponding TF-IDF values as elements. The sparce scipy matrix is well suited for our case since each article contains a small percent of the words, so the resulting TF-IDF matrix is quite sparse. From such a TF-IDF matrix, we obtain a concept vector (CV) for each word, by simply accessing the columns of the matrix.  
+Output: The final output of this code pipeline is a text file formated as a set of single-line json objects that is suitable to be imported to MongoDB, where our knowledge base is to be stored (note: Mongo limit of a single json object is 16MB).
 
 Articles #:  1829625
 Words #:  1294606
 
+Preprocessing:
+Cleaning Wikipedia data involves:
+      pruning disambiguation pages with "may refer to:"
+      pruning categories (if used wikiextractor by Attardi, done by this code)
+      pruning too short articles (< 100 non-stopwords)
+      pruning rare words (< 3 articles) (min_df)
+      pruning too frequent (= corpus specific stopwords) present in >10% articles (max_df)
+      pruning dates (4 May, 2011, 1987)
+
 Parameters:
-- minimum document frequency for a word (min_df = 3, min_df = 8 (Hieu) )
-- maximum percent of articles in which the word appears (max_df = 0.7, max_df = 0.1 (Hieu))
+- minimum document frequency for a word (min_df = 3 (Gabrilovich), min_df = 8 (Hieu) )
+- maximum percent of articles in which the word appears (max_df = 0.7 (suggested in the article about TF-IDF), max_df = 0.1 (Hieu))
 - default tokenizer is token_pattern=u'(?u)\b\w\w+\b'  (note: \w == [a-zA-Z0-9_])
 We set token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b'
 
 - ESA method normalizes the data. 
 (tfidf = TfidfTransformer(norm=None, sublinear_tf=True), freq_term_matrix.data = 1 + np.log( freq_term_matrix.data ) )
-- Hieu's method (Hieu et al. 2013) is not normalized: no log transformation, just use raw TF values.  if we want to compare words based on similar concepts, then we probably also want those to have similar tfidf scales. ok, article lengths also represent to us their importance in "general" in some way. perhaps :)
-
+- Hieu's method (Hieu et al. 2013) is not normalized: no log transformation, just use raw TF values.  if we want to compare words based on similar concepts, then we probably also want those to have similar TF-IDF scales. ok, article lengths also represent to us their importance in "general" in some way. perhaps :)
 - we threshold the TF-IDF values with 0.12 based on (Hieu et al. 2013)
+- we prune the vectors, instead, when using method by Gabrlivoch (that means taking a sliding window of 100 on a sorted concept vector by Tf-IDF, and cut when the differnce between the first and last element in the window is higher than 5% from the highest TF-IDF value in this concept vector <=> sudden drop)
 
 
-Cleaning input:
 
-      pruning disambiguation pages with "may refer to:"
-      pruning categories done in previous step, wikiextractor by Attardi
-      pruning too short articles (< 200 words)
-      pruning rare words (< 3 articles) (min_df)
-      pruning too frequent (= corpus specific stopwords) present in >10% articles (max_df)
 
 
 
 References
 ----------
 Gabrilovich, Evgeniy, and Shaul Markovitch. "Computing Semantic Relatedness Using Wikipedia-based Explicit Semantic Analysis." IJCAI. Vol. 7. 2007.
+
 Gabrilovich, Evgeniy, and Shaul Markovitch. "Wikipedia-based semantic interpretation for natural language processing." Journal of Artificial Intelligence Research (2009): 443-498.
+
 Hieu, Nguyen Trung, Mario Di Francesco, and Antti Ylä-Jääski. "Extracting knowledge from wikipedia articles through distributed semantic analysis." Proceedings of the 13th International Conference on Knowledge Management and Knowledge Technologies. ACM, 2013.
 '''
 
@@ -65,39 +70,42 @@ article_ids = defaultdict(int)
 article_urls = defaultdict(int)
 train_set_dict = defaultdict(int) 
 
-# read all the files in from all the folders
-# remove "disambiguation" pages with check for "may refer to:"
-for dirin_name in os.listdir(path):
-	print dirin_name
-	dirin_name_full = os.path.join(path, dirin_name)
-	for fin_name in os.listdir(dirin_name_full):
-		#print fin_name
-		fin_name_full = os.path.join(dirin_name_full, fin_name)
-		print fin_name_full
-		fin = open(fin_name_full,"r")
-		# for each article i.e., line
-		for line in fin:
-			# disambiguation check
-			suffix = "may refer to:"
-			if not (line[:-1].endswith(suffix)):
-				line = line[:-1].split(" ")
-				# article minimum length check
-				if (len(line) >= 200):
-					# take first number in the line, that is the id
-					aid = line[0]
-					# second element is the url
-					aurl = line[1]
-					# join back (not so efficient) the rest of the line TODO CHCK
-					aline = " ".join(line[2:])
-					# the dictionaries save what they need to save
-					article_ids[cnt_articles] = int(aid)
-					article_urls[cnt_articles] = aurl
-					# append the line == article text to train set
-					train_set_dict[cnt_articles] = aline
-					cnt_articles += 1
-		fin.close()
+# One code found online for preprocessing Wikipedia data is wikiextractor by Prof. Attardi http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
+def read_in_wikiextractor_output():
+	# I adapted wikiextractor to output one article per single line
+	# here we read in such output
+	# read in all the files from all the folders (Attardi divides output in many files in many folders)
+	for dirin_name in os.listdir(path):
+		print dirin_name
+		dirin_name_full = os.path.join(path, dirin_name)
+		for fin_name in os.listdir(dirin_name_full):
+			#print fin_name
+			fin_name_full = os.path.join(dirin_name_full, fin_name)
+			print fin_name_full
+			fin = open(fin_name_full,"r")
+			# for each article i.e., line
+			for line in fin:
+				# disambiguation page check
+				suffix = "may refer to:"
+				if not (line[:-1].endswith(suffix)):
+					line = line[:-1].split(" ")
+					# article minimum length check
+					if (len(line) >= 200):
+						# take first number in the line, that is the id
+						aid = line[0]
+						# second element is the url
+						aurl = line[1]
+						# join back (not so efficient) the rest of the line
+						aline = " ".join(line[2:])
+						# the dictionaries save what they need to save
+						article_ids[cnt_articles] = int(aid)
+						article_urls[cnt_articles] = aurl
+						# append the line == article text to train set
+						train_set_dict[cnt_articles] = aline
+						cnt_articles += 1
+			fin.close()
+	print "INSERTED articles #: ", cnt_articles
 
-print "INSERTED articles #: ", cnt_articles
 
 train_set = train_set_dict.values()
 # use the whole (Wiki) set as the train set
