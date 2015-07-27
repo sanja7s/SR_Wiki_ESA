@@ -105,8 +105,8 @@ from dateutil.parser import *
 # READ IN
 #####################################################################################################################
 
-# 1 read in the data preprocessed by Wiki preprocessor given by Gabrilovich
-# wikiprep
+# 1 read in the data preprocessed by Wiki preprocessor given by Gabrilovich, wikiprep
+# f is the file name for the output file from wikiprep that contins statistics about the number of links for pages
 def read_inlinks(f = "20051105_pages_articles.stat.inlinks"):
 	articles_stat_links = defaultdict(int)
 	for line in open(f, "r"):
@@ -116,6 +116,8 @@ def read_inlinks(f = "20051105_pages_articles.stat.inlinks"):
 		articles_stat_links[page] = links
 	return articles_stat_links
 
+# we store here our additionally cleaned dataset from the preprocessed hgw xml 
+# to outfile as na optional step
 def process_keywords(aid, text, title, cnt_articles, article_ids, train_set_dict, outfile):
 	# use nltk to find english stopwords and tokenize the text
 	# while I need to join the tokens later for the purpose of TfIDFTokenizer, a good thing is that now I still clean the stopwords, 
@@ -133,6 +135,7 @@ def process_keywords(aid, text, title, cnt_articles, article_ids, train_set_dict
 		cnt_articles += 1
 	return cnt_articles
 
+# extract page properties or clean the page text from buf
 def process_page(buf, cnt_articles, article_ids, train_set_dict, outfile):
 	# prune all the unecessary pages (articles based on type)
 	if "This is a disambiguation page" in buf:
@@ -181,6 +184,9 @@ def process_page(buf, cnt_articles, article_ids, train_set_dict, outfile):
 	cnt_articles = process_keywords(aid, text, title, cnt_articles, article_ids, train_set_dict, outfile)
 	return cnt_articles
 
+# f_in is the hgw xml file which is the output by Gabrilovich wikiprep
+# f_articles_out is a file in which we save article titles and article ids, to be able to read them in to Mongo later, too.
+# that will be our helping collection in Mongo, since we want to know what are the titles of the relevant concepts for words.
 def process_hgw_xml(f_in = "20051105_pages_articles.hgw.xml",f_articles_out = "v4_AID_hgw_titles.tsv"):
 	# count how many articles (i.e., lines) are read
 	outfile = open(f_articles_out,'w')
@@ -218,9 +224,7 @@ def process_hgw_xml(f_in = "20051105_pages_articles.hgw.xml",f_articles_out = "v
 
 # 2 Read in the data preprocessed by wikiextractor by Prof. Attardi 
 # http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
-def read_in_wikiextractor_output():
-	path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/OUTPUT/wikiALL_titles_url_out_no_templates"
-	#path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/INPUT/testINPUT"
+def read_in_wikiextractor_output(path="/home/sscepano/Project7s/Twitter/wiki_test_learn/OUTPUT/wikiALL_titles_url_out_no_templates"):
 
 	# count how many articles (i.e., lines) are read
 	cnt_articles = 0
@@ -272,6 +276,9 @@ def read_in_wikiextractor_output():
 # The code uses scikits.learn Python module for machine learning http://scikit-learn.sourceforge.net/stable/
 
 # 1 Normalize TF-IDF (Gabrilovich)
+# cnt_articles is the number of articles we kept after preprocessign and cleaning the Wikipedia data
+# article_ids is a dictionary with cnt_articles items: Wiki article ids, indexed by our internal ids
+# train_set_dict is a dictionary with cnt_articles items: cleaned texts of Wiki articles, indexed by our internal ids
 def tfidf_normalize(cnt_articles, article_ids, article_urls = None, train_set_dict):
 	# use the whole (Wiki) set as both the train and test set
 	train_set = train_set_dict.values()
@@ -287,6 +294,10 @@ def tfidf_normalize(cnt_articles, article_ids, article_urls = None, train_set_di
 	# this means that each article will get representation based on the words from the vocabulary and
 	# their TF-IDF values in the Scipy sparse output matricx
 	freq_term_matrix = vectorizer.transform(test_set)
+	# Gabrilovich says that they threshold TF on 3 (remove word-article association if that word
+	# does not appear at least 3 times in that single article
+	freq_term_matrix.data *= freq_term_matrix.data>=3
+	freq_term_matrix.eliminate_zeros() # I think this is not necessary...
 	# this is a log transformation as applied in (Gabrilovich, 2009), i.e., that is
 	# how he defines TF values. In case of TF = 0, this shall not affect such value
 	# freq_term_matrix.data = 1 + np.log( freq_term_matrix.data )
@@ -307,7 +318,11 @@ def tfidf_normalize(cnt_articles, article_ids, article_urls = None, train_set_di
 	print "Words: ", N
 	return M, N, CSC_matrix, word_index
 
+
 # 2 Raw TF-IDF values (Hieu)
+# cnt_articles is the number of articles we kept after preprocessign and cleaning the Wikipedia data
+# article_ids is a dictionary with cnt_articles items: Wiki article ids, indexed by our internal ids
+# train_set_dict is a dictionary with cnt_articles items: cleaned texts of Wiki articles, indexed by our internal ids
 def tfidf_raw(cnt_articles, article_ids, article_urls = None, train_set_dict):
 	# use the whole (Wiki) set as both the train and test set
 	train_set = train_set_dict.values()
@@ -353,7 +368,7 @@ def tfidf_raw(cnt_articles, article_ids, article_urls = None, train_set_dict):
 # go through columns and print the word and the indices (= article_id) and the column data (= tfidf)
 
 # 1 save with sliding window pruning (Gabrilovich)
-def save_CV_with_sliding_window_pruning(m, fn, window=100, drop_pct=5):
+def save_CV_with_sliding_window_pruning(m, fn, word_index, window=100, drop_pct=5):
 	M, N = m.shape
 	CNT = 0
 	chck_pruning = 0
@@ -386,7 +401,7 @@ def save_CV_with_sliding_window_pruning(m, fn, window=100, drop_pct=5):
 	print "1 Pruned terms total: ", chck_pruning
 
 # 2 save with threshold pruning (Hieu)
-def save_CV_with_threshold_pruning(m, fn, threshold=12):
+def save_CV_with_threshold_pruning(m, fn, word_index, threshold=12):
 	M, N = m.shape
 	CNT = 0
 	chck_pruning = 0
@@ -422,11 +437,11 @@ def save_CV_with_threshold_pruning(m, fn, threshold=12):
 #####################################################################################################################
 
 def ESA_1(fn):
-	cnt_articles, article_ids, train_set_dict = process_hgw_xml()
+	cnt_articles, article_ids, train_set_dict = process_hgw_xml(f_in = "20051105_pages_articles.hgw.xml",f_articles_out = "v4_AID_hgw_titles.tsv")
 	
-	M, N, CSC_matrix, word_index = tfidf_normalize(cnt_articles, article_ids, article_urls, train_set_dict)
+	M, N, CSC_matrix, word_index = tfidf_normalize(cnt_articles, article_ids, train_set_dict)
 
-	save_CV_with_sliding_window_pruning(CSC_matrix, fn)
+	save_CV_with_sliding_window_pruning(CSC_matrix, fn, word_index)
 #####################################################################################################################
 
 
@@ -438,7 +453,7 @@ def ESA_1(fn):
 def ESA_2(fn):
 	cnt_articles, article_ids, article_urls, train_set_dict = read_in_wikiextractor_output()
 	
-	M, N, CSC_matrix, word_index = tfidf_raw(cnt_articles, article_ids, article_urls = None, train_set_dict)
+	M, N, CSC_matrix, word_index = tfidf_raw(cnt_articles, article_ids, train_set_dict)
 
-	save_CV_with_threshold_pruning(CSC_matrix, fn)
+	save_CV_with_threshold_pruning(CSC_matrix, fn, word_index)
 #####################################################################################################################
