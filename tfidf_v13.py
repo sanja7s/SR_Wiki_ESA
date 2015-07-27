@@ -46,7 +46,6 @@ Additional cleaning of Wikipedia data for our purpose involves:
       pruning dates (4 May, 2011, 1987)
 
 1 There is a code provided by Gabrilovich wikiprep that is meant exactly for the purpose of ESA.
-
 2 Another version of Wikipedia preprocessing code is by Prof. Attardi and serves more general purpose, wikiextractor.
 
 
@@ -101,7 +100,12 @@ from nltk.corpus import stopwords
 # to prune date articles
 from dateutil.parser import *
 
-# Use code found online for preprocessing Wikipedia data -- wikiextractor by Prof. Attardi http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
+
+#####################################################################################################################
+# READ IN
+#####################################################################################################################
+# 1 Read in the data preprocessed by wikiextractor by Prof. Attardi 
+# http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
 def read_in_wikiextractor_output():
 	path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/OUTPUT/wikiALL_titles_url_out_no_templates"
 	#path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/INPUT/testINPUT"
@@ -147,10 +151,8 @@ def read_in_wikiextractor_output():
 	return cnt_articles, article_ids, article_urls, train_set_dict
 
 
-
-#####################################################################################################################
-# Use Wiki preprocessor given by Gabrilovich
-
+# 2 read in the data preprocessed by Wiki preprocessor given by Gabrilovich
+# 
 def read_inlinks(f = "20051105_pages_articles.stat.inlinks"):
 	articles_stat_links = defaultdict(int)
 	for line in open(f, "r"):
@@ -258,13 +260,17 @@ def process_hgw_xml(f_in = "20051105_pages_articles.hgw.xml",f_articles_out = "v
 	return cnt_articles, article_ids, train_set_dict
 
 
-cnt_articles, article_ids, train_set_dict = process_hgw_xml()
-
-
+#cnt_articles, article_ids, train_set_dict = process_hgw_xml()
 #####################################################################################################################
 
-# The code below that calculates TF-IDF is adapted from his blogpost by Christian S. Perone http://blog.christianperone.com/?p=1589
-# This code uses scikits.learn Python module for machine learning http://scikit-learn.sourceforge.net/stable/
+#####################################################################################################################
+# TF-IDF
+#####################################################################################################################
+# Code that calculates TF-IDF is adapted from the blogpost by Christian S. Perone
+# http://blog.christianperone.com/?p=1589
+# The code uses scikits.learn Python module for machine learning http://scikit-learn.sourceforge.net/stable/
+
+# 1 Normalize TF-IDF (Gabrilovich)
 def tfidf_normalize(cnt_articles, article_ids, article_urls = None, train_set_dict):
 	# use the whole (Wiki) set as both the train and test set
 	train_set = train_set_dict.values()
@@ -272,10 +278,13 @@ def tfidf_normalize(cnt_articles, article_ids, article_urls = None, train_set_di
 	# instantiate vectorizer with English language, using stopwords and set min_df, max_df parameters and the tokenizer
 	vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.7, token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b')
 	# by appling the vectorizer instance to the train set
-	# it will create a vocabulary from all the words that appear in at least min_df and in no more than max_df documents in the train_set
+	# it will create a vocabulary from all the words that appear in at least min_df and in no more than max_df
+	# documents in the train_set
 	vectorizer.fit_transform(train_set)
-	# vectorizer transform will apply the vocabulary from the train set to the test set. In my case, they are the same set: whole Wikipedia.
-	# this means that each article will get representation based on the words from the vocabulary and their TF-IDF values in the Scipy sparse output matricx
+	# vectorizer transform will apply the vocabulary from the train set to the test set. In my case,
+	# they are the same set: whole Wikipedia.
+	# this means that each article will get representation based on the words from the vocabulary and
+	# their TF-IDF values in the Scipy sparse output matricx
 	freq_term_matrix = vectorizer.transform(test_set)
 	# this is a log transformation as applied in (Gabrilovich, 2009), i.e., that is
 	# how he defines TF values. In case of TF = 0, this shall not affect such value
@@ -286,41 +295,67 @@ def tfidf_normalize(cnt_articles, article_ids, article_urls = None, train_set_di
 	tfidf.fit(freq_term_matrix)
 	# finally, tfidf will calculate TFIDF values with transform()
 	tf_idf_matrix = tfidf.transform(freq_term_matrix)
-	# now we put our matrix to CSC format (as it helps with accessing columns for inversing the vectors to words' concept vectors)
+	# now we put our matrix to CSC format (as it helps with accessing columns for inversing the vectors to
+	# words' concept vectors)
 	CSC_matrix = tf_idf_matrix.tocsc() 
-	# we need vocabulary_ to be accessible by the index of the word so we inverse the keys and values of the dictionary and put them to new dictionary word_index
+	# we need vocabulary_ to be accessible by the index of the word so we inverse the keys and values of the
+	#dictionary and put them to new dictionary word_index
 	word_index = dict((v, k) for k, v in vectorizer.vocabulary_.iteritems())
 	M, N = CSC_matrix.shape
 	print "Articles: ", M
 	print "Words: ", N
 	return M, N, CSC_matrix, word_index
 
-# save desired output for the next step (input to MongoDB)
-# CV = word, article_id1:tfidf1 ... article_idN:tfidfN *FORMAT 4 JSON*
-# we go through columns and print the word and the indices (= article_id)
-# and the column data (= tfidf)
-# indices tell the right article_id for those values
-def save_CV_with_pruning(m, fn):
-	M, N = m.shape
-	with io.open(fn, 'w', encoding='utf-8') as f:
-		for j in range(N):
-			CV_dict = {}
-			the_word = word_index[j]
-			CV_dict['_id'] = the_word
-			CV_dict['CV'] = []
-			col = m.getcol(j)
-			for (idx, value) in sorted(zip(col.indices, col.data), key = lambda t: t[1], reverse=True):
-				if value >= 6:
-					tfidf_dict = {}
-					tfidf_dict[str(idx)] = (str(value),str(article_ids[idx]))
-					CV_dict['CV'].append(tfidf_dict)
-				else:
-					continue
-			f.write(unicode(json.dumps(CV_dict, ensure_ascii=False)) + '\n')
+# 2 Raw TF-IDF values (Hieu)
+def tfidf_raw(cnt_articles, article_ids, article_urls = None, train_set_dict):
+	# use the whole (Wiki) set as both the train and test set
+	train_set = train_set_dict.values()
+	test_set = train_set
+	# instantiate vectorizer with English language, using stopwords and set min_df, max_df parameters and the tokenizer
+	vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.7, token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b')
+	# by appling the vectorizer instance to the train set
+	# it will create a vocabulary from all the words that appear in at least min_df and in no more than max_df
+	# documents in the train_set
+	vectorizer.fit_transform(train_set)
+	# vectorizer transform will apply the vocabulary from the train set to the test set. In my case,
+	# they are the same set: whole Wikipedia.
+	# this means that each article will get representation based on the words from the vocabulary and
+	# their TF-IDF values in the Scipy sparse output matricx
+	freq_term_matrix = vectorizer.transform(test_set)
+	# this is a log transformation as applied in (Gabrilovich, 2009), i.e., that is
+	# how he defines TF values. In case of TF = 0, this shall not affect such value
+	# freq_term_matrix.data = 1 + np.log( freq_term_matrix.data )
+	# instantiate tfidf trnasformer
+	tfidf = TfidfTransformer(norm=None, sublinear_tf=False)
+	# tfidf uses the freq_term_matrix to calculate IDF values for each word (element of the vocabulary)
+	tfidf.fit(freq_term_matrix)
+	# finally, tfidf will calculate TFIDF values with transform()
+	tf_idf_matrix = tfidf.transform(freq_term_matrix)
+	# now we put our matrix to CSC format (as it helps with accessing columns for inversing the vectors to
+	# words' concept vectors)
+	CSC_matrix = tf_idf_matrix.tocsc() 
+	# we need vocabulary_ to be accessible by the index of the word so we inverse the keys and values of the
+	#dictionary and put them to new dictionary word_index
+	word_index = dict((v, k) for k, v in vectorizer.vocabulary_.iteritems())
+	M, N = CSC_matrix.shape
+	print "Articles: ", M
+	print "Words: ", N
+	return M, N, CSC_matrix, word_index
+#####################################################################################################################
 
-def test_before_save_CV_with_pruning(m, fn):
+
+#####################################################################################################################
+# OUTPUT
+#####################################################################################################################
+# save desired output for the next step (input to MongoDB) in JSON file, format:
+# CV = word, article_id1:tfidf1 ... article_idN:tfidfN
+# go through columns and print the word and the indices (= article_id) and the column data (= tfidf)
+
+# 1 save with sliding window pruning (Gabrilovich)
+def save_CV_with_sliding_window_pruning(m, fn, window=100, drop_pct=5):
 	M, N = m.shape
 	CNT = 0
+	chck_pruning = 0
 	with io.open(fn, 'w', encoding='utf-8') as f:
 		for j in range(N):
 			CNT += 1
@@ -330,19 +365,54 @@ def test_before_save_CV_with_pruning(m, fn):
 			CV_dict['CV'] = []
 			col = m.getcol(j)
 			highest_scoring_concept = max(col.data)
+			highest_scoring_concept_pct = highest_scoring_concept * drop_pct/100.0
+			remembered_tfidf = highest_scoring_concept
+			k = 0
 			for (idx, value) in sorted(zip(col.indices, col.data), key = lambda t: t[1], reverse=True):
-				if value >= 8:
+				k += 1
+				tfidf_dict = {}
+				tfidf_dict[str(idx)] = (str(value),str(article_ids[idx]))
+				CV_dict['CV'].append(tfidf_dict)
+				if k % window == 0:
+					if remembered_tfidf - value > highest_scoring_concept_pct:
+						chck_pruning = += len(col.data) - k
+						break
+					else:
+						remembered_tfidf = value
+			f.write(unicode(json.dumps(CV_dict, ensure_ascii=False)) + '\n')
+			if CNT % 10000 == 0:
+				print CNT, the_word, highest_scoring_concept, value
+	print "1 Pruned terms total: ", chck_pruning
+
+# 2 save with threshold pruning (Hieu)
+def save_CV_with_threshold_pruning(m, fn, threshold=12):
+	M, N = m.shape
+	CNT = 0
+	chck_pruning = 0
+	with io.open(fn, 'w', encoding='utf-8') as f:
+		for j in range(N):
+			CNT += 1
+			CV_dict = {}
+			the_word = word_index[j]
+			CV_dict['_id'] = the_word
+			CV_dict['CV'] = []
+			col = m.getcol(j)
+			highest_scoring_concept = max(col.data)
+			selected_terms = 0
+			for (idx, value) in sorted(zip(col.indices, col.data), key = lambda t: t[1], reverse=True):
+				if value >= threshold:
 					tfidf_dict = {}
 					tfidf_dict[str(idx)] = (str(value),str(article_ids[idx]))
 					CV_dict['CV'].append(tfidf_dict)
-			#if len(CV_dict['CV']) > 500:
-				#print len(CV_dict['CV']), the_word, highest_scoring_concept, value
-			#f.write(unicode(json.dumps(CV_dict, ensure_ascii=False)) + '\n')
-			if len(CV_dict['CV']) > 500:
-				print len(CV_dict['CV']), the_word, highest_scoring_concept, value
-			if CNT == 6000:
-				return
-
+					selected_terms += 1
+				else:
+					chck_pruning += len(col.data) - selected_terms
+					break
+			f.write(unicode(json.dumps(CV_dict, ensure_ascii=False)) + '\n')
+			if CNT % 10000 == 0:
+				print CNT, the_word, highest_scoring_concept, value
+	print "2 Pruned terms total: ", chck_pruning
+#####################################################################################################################
 
 
 cnt_articles, article_ids, article_urls, train_set_dict = read_in_wikiextractor_output()
