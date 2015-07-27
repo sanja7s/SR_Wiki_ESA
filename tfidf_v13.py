@@ -104,55 +104,9 @@ from dateutil.parser import *
 #####################################################################################################################
 # READ IN
 #####################################################################################################################
-# 1 Read in the data preprocessed by wikiextractor by Prof. Attardi 
-# http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
-def read_in_wikiextractor_output():
-	path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/OUTPUT/wikiALL_titles_url_out_no_templates"
-	#path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/INPUT/testINPUT"
 
-	# count how many articles (i.e., lines) are read
-	cnt_articles = 0
-	article_ids = defaultdict(int)
-	article_urls = defaultdict(int)
-	train_set_dict = defaultdict(int)
-	# I adapted wikiextractor to output one article per single line
-	# here we read in such output
-	# read in all the files from all the folders (Attardi divides output in many files in many folders)
-	for dirin_name in os.listdir(path):
-		print dirin_name
-		dirin_name_full = os.path.join(path, dirin_name)
-		for fin_name in os.listdir(dirin_name_full):
-			#print fin_name
-			fin_name_full = os.path.join(dirin_name_full, fin_name)
-			print fin_name_full
-			fin = open(fin_name_full,"r")
-			# for each article i.e., line
-			for line in fin:
-				# disambiguation page check
-				suffix = "may refer to:"
-				if not (line[:-1].endswith(suffix)):
-					line = line[:-1].split(" ")
-					# article minimum length check
-					if (len(line) >= 200):
-						# take first number in the line, that is the id
-						aid = line[0]
-						# second element is the url
-						aurl = line[1]
-						# join back (not so efficient) the rest of the line
-						aline = " ".join(line[2:])
-						# the dictionaries save what they need to save
-						article_ids[cnt_articles] = int(aid)
-						article_urls[cnt_articles] = aurl
-						# append the line == article text to train set
-						train_set_dict[cnt_articles] = aline
-						cnt_articles += 1
-			fin.close()
-	print "INSERTED articles: ", cnt_articles
-	return cnt_articles, article_ids, article_urls, train_set_dict
-
-
-# 2 read in the data preprocessed by Wiki preprocessor given by Gabrilovich
-# 
+# 1 read in the data preprocessed by Wiki preprocessor given by Gabrilovich
+# wikiprep
 def read_inlinks(f = "20051105_pages_articles.stat.inlinks"):
 	articles_stat_links = defaultdict(int)
 	for line in open(f, "r"):
@@ -260,8 +214,55 @@ def process_hgw_xml(f_in = "20051105_pages_articles.hgw.xml",f_articles_out = "v
 	return cnt_articles, article_ids, train_set_dict
 
 
-#cnt_articles, article_ids, train_set_dict = process_hgw_xml()
 #####################################################################################################################
+
+# 2 Read in the data preprocessed by wikiextractor by Prof. Attardi 
+# http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
+def read_in_wikiextractor_output():
+	path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/OUTPUT/wikiALL_titles_url_out_no_templates"
+	#path = "/home/sscepano/Project7s/Twitter/wiki_test_learn/INPUT/testINPUT"
+
+	# count how many articles (i.e., lines) are read
+	cnt_articles = 0
+	article_ids = defaultdict(int)
+	article_urls = defaultdict(int)
+	train_set_dict = defaultdict(int)
+	# I adapted wikiextractor to output one article per single line
+	# here we read in such output
+	# read in all the files from all the folders (Attardi divides output in many files in many folders)
+	for dirin_name in os.listdir(path):
+		print dirin_name
+		dirin_name_full = os.path.join(path, dirin_name)
+		for fin_name in os.listdir(dirin_name_full):
+			#print fin_name
+			fin_name_full = os.path.join(dirin_name_full, fin_name)
+			print fin_name_full
+			fin = open(fin_name_full,"r")
+			# for each article i.e., line
+			for line in fin:
+				# disambiguation page check
+				suffix = "may refer to:"
+				if not (line[:-1].endswith(suffix)):
+					line = line[:-1].split(" ")
+					# article minimum length check
+					if (len(line) >= 200):
+						# take first number in the line, that is the id
+						aid = line[0]
+						# second element is the url
+						aurl = line[1]
+						# join back (not so efficient) the rest of the line
+						aline = " ".join(line[2:])
+						# the dictionaries save what they need to save
+						article_ids[cnt_articles] = int(aid)
+						article_urls[cnt_articles] = aurl
+						# append the line == article text to train set
+						train_set_dict[cnt_articles] = aline
+						cnt_articles += 1
+			fin.close()
+	print "INSERTED articles: ", cnt_articles
+	return cnt_articles, article_ids, article_urls, train_set_dict
+#####################################################################################################################
+
 
 #####################################################################################################################
 # TF-IDF
@@ -415,15 +416,29 @@ def save_CV_with_threshold_pruning(m, fn, threshold=12):
 #####################################################################################################################
 
 
-cnt_articles, article_ids, article_urls, train_set_dict = read_in_wikiextractor_output()
-M, N, CSC_matrix, word_index = tfidf(cnt_articles, article_ids, article_urls, train_set_dict)
-# file to save the matrix
-filename2 = "tf_idf_ALL137s.json"
-# save_CV(testM, filename2)
-save_CV_with_pruning(CSC_matrix, filename2)
 
-fn_test = "test_CV1311.json"
-test_before_save_CV_with_pruning(CSC_matrix, fn_test)
+#####################################################################################################################
+# Execute track 1 Gabrilovich
+#####################################################################################################################
 
-test = [7,4,3,2,1,7,7]
+def ESA_1(fn):
+	cnt_articles, article_ids, train_set_dict = process_hgw_xml()
+	
+	M, N, CSC_matrix, word_index = tfidf_normalize(cnt_articles, article_ids, article_urls, train_set_dict)
 
+	save_CV_with_sliding_window_pruning(CSC_matrix, fn)
+#####################################################################################################################
+
+
+
+#####################################################################################################################
+# Execute track 2 Hieu
+#####################################################################################################################
+
+def ESA_2(fn):
+	cnt_articles, article_ids, article_urls, train_set_dict = read_in_wikiextractor_output()
+	
+	M, N, CSC_matrix, word_index = tfidf_raw(cnt_articles, article_ids, article_urls = None, train_set_dict)
+
+	save_CV_with_threshold_pruning(CSC_matrix, fn)
+#####################################################################################################################
