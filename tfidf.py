@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 '''
 author: sanja7s
 
@@ -83,7 +86,8 @@ distributed semantic analysis." Proceedings of the 13th International Conference
 Technologies. ACM, 2013.
 '''
 
-import io, json, os
+# 
+import sys, io, json, os
 import numpy as np
 import scipy
 from collections import defaultdict
@@ -101,13 +105,14 @@ from nltk.corpus import stopwords
 from dateutil.parser import *
 
 
+
 #####################################################################################################################
 # READ IN
 #####################################################################################################################
 
 # 1 read in the data preprocessed by Wiki preprocessor given by Gabrilovich, wikiprep
 # f is the file name for the output file from wikiprep that contins statistics about the number of links for pages
-def read_inlinks(f = "20051105_pages_articles.stat.inlinks"):
+def read_inlinks(f = "Gabrliovich_preprocessed/20051105_pages_articles.stat.inlinks"):
 	articles_stat_links = defaultdict(int)
 	for line in open(f, "r"):
 		page, links = line.split()
@@ -136,7 +141,7 @@ def process_keywords(aid, text, title, cnt_articles, article_ids, train_set_dict
 	return cnt_articles
 
 # extract page properties or clean the page text from buf
-def process_page(buf, cnt_articles, article_ids, train_set_dict, outfile):
+def process_page(buf, cnt_articles, article_ids, train_set_dict, outfile, asl):
 	# prune all the unecessary pages (articles based on type)
 	if "This is a disambiguation page" in buf:
 		#print "disambiguation"
@@ -175,7 +180,7 @@ def process_page(buf, cnt_articles, article_ids, train_set_dict, outfile):
 		return cnt_articles
 	# finally, if page passed the pruning phase, extract only its text
 	m = re.search(r'<text>(.*)</text>', buf, re.DOTALL)
-    text = m.group(1) if m else None
+	text = m.group(1) if m else None
     # I choose not to care about headers and other xml markup that might be left
 	text = re.sub(r'<(.*)>', '', text, re.DOTALL)
 	# for the next step, I need one-line articles, so we replace new lines with spaces
@@ -187,7 +192,8 @@ def process_page(buf, cnt_articles, article_ids, train_set_dict, outfile):
 # f_in is the hgw xml file which is the output by Gabrilovich wikiprep
 # f_articles_out is a file in which we save article titles and article ids, to be able to read them in to Mongo later, too.
 # that will be our helping collection in Mongo, since we want to know what are the titles of the relevant concepts for words.
-def process_hgw_xml(f_in = "20051105_pages_articles.hgw.xml",f_articles_out = "v4_AID_hgw_titles.tsv"):
+def process_hgw_xml(f_in = "Gabrliovich_preprocessed/20051105_pages_articles.hgw.xml",f_articles_out = "output/AID_titles.tsv"):
+	asl = read_inlinks()
 	# count how many articles (i.e., lines) are read
 	outfile = open(f_articles_out,'w')
 	outfile.write('_id' + '\t' + 'our_id' + '\t' + 'title' + '\n')
@@ -208,7 +214,7 @@ def process_hgw_xml(f_in = "20051105_pages_articles.hgw.xml",f_articles_out = "v
 				cnt_all_articles += 1
 	 			append = False
 				try:
-					cnt_articles = process_page(inputbuffer, cnt_articles, article_ids, train_set_dict, outfile)
+					cnt_articles = process_page(inputbuffer, cnt_articles, article_ids, train_set_dict, outfile, asl)
 				except TypeError as e:
 					print e
 				inputbuffer = None
@@ -229,7 +235,6 @@ def read_in_wikiextractor_output(path="/home/sscepano/Project7s/Twitter/wiki_tes
 	# count how many articles (i.e., lines) are read
 	cnt_articles = 0
 	article_ids = defaultdict(int)
-	article_urls = defaultdict(int)
 	train_set_dict = defaultdict(int)
 	# I adapted wikiextractor to output one article per single line
 	# here we read in such output
@@ -258,13 +263,12 @@ def read_in_wikiextractor_output(path="/home/sscepano/Project7s/Twitter/wiki_tes
 						aline = " ".join(line[2:])
 						# the dictionaries save what they need to save
 						article_ids[cnt_articles] = int(aid)
-						article_urls[cnt_articles] = aurl
 						# append the line == article text to train set
 						train_set_dict[cnt_articles] = aline
 						cnt_articles += 1
 			fin.close()
 	print "INSERTED articles: ", cnt_articles
-	return cnt_articles, article_ids, article_urls, train_set_dict
+	return cnt_articles, article_ids, train_set_dict
 #####################################################################################################################
 
 
@@ -279,7 +283,7 @@ def read_in_wikiextractor_output(path="/home/sscepano/Project7s/Twitter/wiki_tes
 # cnt_articles is the number of articles we kept after preprocessign and cleaning the Wikipedia data
 # article_ids is a dictionary with cnt_articles items: Wiki article ids, indexed by our internal ids
 # train_set_dict is a dictionary with cnt_articles items: cleaned texts of Wiki articles, indexed by our internal ids
-def tfidf_normalize(cnt_articles, article_ids, article_urls = None, train_set_dict):
+def tfidf_normalize(cnt_articles, article_ids, train_set_dict):
 	# use the whole (Wiki) set as both the train and test set
 	train_set = train_set_dict.values()
 	test_set = train_set
@@ -323,7 +327,7 @@ def tfidf_normalize(cnt_articles, article_ids, article_urls = None, train_set_di
 # cnt_articles is the number of articles we kept after preprocessign and cleaning the Wikipedia data
 # article_ids is a dictionary with cnt_articles items: Wiki article ids, indexed by our internal ids
 # train_set_dict is a dictionary with cnt_articles items: cleaned texts of Wiki articles, indexed by our internal ids
-def tfidf_raw(cnt_articles, article_ids, article_urls = None, train_set_dict):
+def tfidf_raw(cnt_articles, article_ids, train_set_dict):
 	# use the whole (Wiki) set as both the train and test set
 	train_set = train_set_dict.values()
 	test_set = train_set
@@ -368,10 +372,11 @@ def tfidf_raw(cnt_articles, article_ids, article_urls = None, train_set_dict):
 # go through columns and print the word and the indices (= article_id) and the column data (= tfidf)
 
 # 1 save with sliding window pruning (Gabrilovich)
-def save_CV_with_sliding_window_pruning(m, fn, word_index, window=100, drop_pct=5):
+def save_CV_with_sliding_window_pruning(m, fn, word_index, article_ids, window=4, drop_pct=20):
 	M, N = m.shape
 	CNT = 0
 	chck_pruning = 0
+	TEST_WORD = "new"
 	with io.open(fn, 'w', encoding='utf-8') as f:
 		for j in range(N):
 			CNT += 1
@@ -380,28 +385,45 @@ def save_CV_with_sliding_window_pruning(m, fn, word_index, window=100, drop_pct=
 			CV_dict['_id'] = the_word
 			CV_dict['CV'] = []
 			col = m.getcol(j)
+			if len(col.data) == 0:
+				continue
 			highest_scoring_concept = max(col.data)
 			highest_scoring_concept_pct = highest_scoring_concept * drop_pct/100.0
 			remembered_tfidf = highest_scoring_concept
+			remembered_id = 0
 			k = 0
 			for (idx, value) in sorted(zip(col.indices, col.data), key = lambda t: t[1], reverse=True):
 				k += 1
 				tfidf_dict = {}
 				tfidf_dict[str(idx)] = (str(value),str(article_ids[idx]))
 				CV_dict['CV'].append(tfidf_dict)
-				if k % window == 0:
+				if the_word == TEST_WORD:
+					print value, remembered_tfidf, highest_scoring_concept_pct, remembered_tfidf - value
+				#print col.data
+				if k >= window:
 					if remembered_tfidf - value > highest_scoring_concept_pct:
-						chck_pruning = += len(col.data) - k
+						if the_word == TEST_WORD:
+							print "PRUNED ", value, remembered_tfidf, highest_scoring_concept_pct, remembered_tfidf - value
+						chck_pruning += (len(col.data) - k)
 						break
 					else:
-						remembered_tfidf = value
+						remembered_id += 1
+						remembered_tfidf = np.sort(col.data)[::-1][remembered_id]
+						# test
+						#if the_word == "new":
+							#print highest_scoring_concept_pct, remembered_id, remembered_tfidf, value
+							#print np.sort(col.data)[::-1]
+			if the_word == TEST_WORD:
+				print CV_dict
+				print np.sort(col.data)[::-1]
 			f.write(unicode(json.dumps(CV_dict, ensure_ascii=False)) + '\n')
-			if CNT % 10000 == 0:
-				print CNT, the_word, highest_scoring_concept, value
-	print "1 Pruned terms total: ", chck_pruning
+			#if CNT % 100 == 0:
+				#print CNT, the_word, highest_scoring_concept, value, len(col.data), highest_scoring_concept_pct
+	print "ESA_1 Pruned terms total: ", chck_pruning
+
 
 # 2 save with threshold pruning (Hieu)
-def save_CV_with_threshold_pruning(m, fn, word_index, threshold=12):
+def save_CV_with_threshold_pruning(m, fn, word_index, article_ids, threshold=12):
 	M, N = m.shape
 	CNT = 0
 	chck_pruning = 0
@@ -427,22 +449,11 @@ def save_CV_with_threshold_pruning(m, fn, word_index, threshold=12):
 			f.write(unicode(json.dumps(CV_dict, ensure_ascii=False)) + '\n')
 			if CNT % 10000 == 0:
 				print CNT, the_word, highest_scoring_concept, value
-	print "2 Pruned terms total: ", chck_pruning
+	print "ESA_2 Pruned terms total: ", chck_pruning
 #####################################################################################################################
 
 
 
-#####################################################################################################################
-# Execute track 1 Gabrilovich
-#####################################################################################################################
-
-def ESA_1(fn):
-	cnt_articles, article_ids, train_set_dict = process_hgw_xml(f_in = "20051105_pages_articles.hgw.xml",f_articles_out = "v4_AID_hgw_titles.tsv")
-	
-	M, N, CSC_matrix, word_index = tfidf_normalize(cnt_articles, article_ids, train_set_dict)
-
-	save_CV_with_sliding_window_pruning(CSC_matrix, fn, word_index)
-#####################################################################################################################
 
 
 
@@ -451,9 +462,10 @@ def ESA_1(fn):
 #####################################################################################################################
 
 def ESA_2(fn):
-	cnt_articles, article_ids, article_urls, train_set_dict = read_in_wikiextractor_output()
+	cnt_articles, article_ids, train_set_dict = read_in_wikiextractor_output()
 	
 	M, N, CSC_matrix, word_index = tfidf_raw(cnt_articles, article_ids, train_set_dict)
 
 	save_CV_with_threshold_pruning(CSC_matrix, fn, word_index)
 #####################################################################################################################
+
