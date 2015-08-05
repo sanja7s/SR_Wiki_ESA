@@ -10,11 +10,11 @@ import tfidf as t
 #####################################################################################################################
 
 
-def ESA_1(fn="output/CV_Gab2005_STOP_CATS.json"):
+def ESA_selected():
 	_log = logging.getLogger(__name__)
 	logging.basicConfig(level=logging.INFO, format='%(name)s: %(levelname)-8s %(message)s')
 
-	cnt_articles, article_ids, train_set_dict = t.process_hgw_xml()
+	cnt_articles, article_ids, train_set_dict = t.process_hgw_xml(selected=True, f_in = "Gabrliovich_preprocessed/20051105_pages_articles.hgw.xml",f_articles_out = "output/AID_titles_test_selected.tsv")
 	_log.info("*** Data loaded. ***")
 
 	while True:
@@ -32,8 +32,18 @@ def ESA_1(fn="output/CV_Gab2005_STOP_CATS.json"):
 			e = sys.exc_info()[0]
 			_log.error("Caught exception from the process\n%s\n%s" % (e, traceback.format_exc()))	
 		try:
-			t.save_CV_all(CSC_matrix, fn, word_index, article_ids)
-			_log.info("*** Data successfully saved. ***")
+			if int(s) == 2:
+				fn="output/CV_Gab2005_true_selected_by_Gab.json"
+				t.save_CV_all(CSC_matrix, fn, word_index, article_ids)
+				_log.info("*** Data successfully saved. ***")
+		except:
+			e = sys.exc_info()[0]
+			_log.error("Caught exception from the process\n%s\n%s" % (e, traceback.format_exc()))
+		try:
+			if int(s) == 3:
+				fn="output/CV_Gab2005_true_selected_by_Gab_pruned.json"
+				t.save_CV_with_sliding_window_pruning(CSC_matrix, fn, word_index, article_ids)
+				_log.info("*** Data successfully saved. ***")
 		except:
 			e = sys.exc_info()[0]
 			_log.error("Caught exception from the process\n%s\n%s" % (e, traceback.format_exc()))
@@ -43,4 +53,4 @@ def ESA_1(fn="output/CV_Gab2005_STOP_CATS.json"):
 #####################################################################################################################
 
 
-ESA_1()
+ESA_selected()

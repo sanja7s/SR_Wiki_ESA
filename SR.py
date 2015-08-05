@@ -13,11 +13,11 @@ def SR_2words(w1, w2):
 	CV, AID7s = connection_params()
 	cv1 = CV.find_one({"_id": w1})
 	cv2 = CV.find_one({"_id": w2})
+	if cv1 == None or cv2 == None:
+		return -1
 	v1 = extract_CV(cv1)
 	v2 = extract_CV(cv2)
-	#print v1
-	#print v2
-	print "SR of the words: ", cosine_2vectors_full(v1, v2)
+	return cosine_2vectors_full(v1, v2)
 
 # given two vectors as dictionaries with *ANY* sets of keys
 # return their cosine similarity *vectors may be of ANY dim*
@@ -62,6 +62,8 @@ def cosine_2vectors_full(v1, v2):
 # extract the CV vector in the form for calculation with true ids for articles
 def extract_CV(cv):
 	v = cv['CV']
+	if v == None:
+		return
 	vec = defaultdict(int)
 	for el in v:
 		for key, value in el.iteritems():
@@ -86,7 +88,7 @@ def print_topN_concepts(w, topN):
 		print term[1], article_name
 
 
-def read_in_human_judgement(file_name = "/home/sscepano/Project7s/Twitter/tfidf_scipy/evaluate_SR_DB_against_human/SR human similarity/combined.tab"):
+def read_in_human_judgement(file_name = "SR_human_similarity/combined.tab"):
 	f = open(file_name, "r")
 	human_SR = defaultdict(int)
 	header = f.readline()
@@ -109,8 +111,8 @@ def evaluate_Wiki_DB_against_human():
 		if Wiki_SR <> -1:
 			human_SR_lst.append(h_SR)
 			Wiki_SR_lst.append(Wiki_SR)
-		else:
-			print w1, w2, h_SR, Wiki_SR
+		# else:
+		print w1, w2, h_SR, Wiki_SR
 	print "Full Wiki Pearson ", pearsonr(human_SR_lst, Wiki_SR_lst)
 	print
 	print "Full Wiki Spearman ", spearmanr(human_SR_lst, Wiki_SR_lst)
@@ -119,7 +121,7 @@ def evaluate_Wiki_DB_against_human():
 #############################################################################################
 # take the right COLLECTION = TF-IDF based concept vectors (CV) -- output from tfidf.py
 #############################################################################################
-def connection_params(client = MongoClient(), dbs="test", CV_collection="v333_hgw_v13", aid_collection="v3_AID"):
+def connection_params(client = MongoClient(), dbs="test", CV_collection="CV_Gab2005_selected_by_Gab_pruned", aid_collection="v3_AID"):
 	# connect to Mongo db test
 	client = MongoClient()
 	db = client[dbs]
