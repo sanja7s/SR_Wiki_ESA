@@ -99,257 +99,27 @@ import itertools
 # to parse xml at some points
 import xml.etree.cElementTree as ET
 import re, random
-from nltk.tokenize import word_tokenize
+from nltk.tokenize import wordpunct_tokenize
 from nltk.corpus import stopwords
+from nltk.stem.snowball import SnowballStemmer
 # to prune date articles
 from dateutil.parser import *
 from sklearn.preprocessing import normalize
 
 
-#####################################################################################################################
-# READ IN
-#####################################################################################################################
-
-# 1 read in the data preprocessed by Wiki preprocessor given by Gabrilovich, wikiprep
-# f is the file name for the output file from wikiprep that contins statistics about the number of links for pages
-def read_inlinks(f = "Gabrliovich_preprocessed/20051105_pages_articles.stat.inlinks"):
-	articles_stat_links = defaultdict(int)
-	for line in open(f, "r"):
-		page, links = line.split()
-		page = int(page)
-		links = int(links)
-		articles_stat_links[page] = links
-	return articles_stat_links
-
-# this code, as well as the category list is taken directly from Catagay Calli's ESA code
-# https://github.com/faraday/wikiprep-esa/blob/master/scanData.py
-def read_stop_cats(f_in = "Gabrliovich_preprocessed/stop_categories_cagatay_calli"):
-	catList = []
-	try:
-		f = open(f_in,'r')
-		for line in f.readlines():
-			strId = line.split('\t')[0]
-			if strId:
-				catList.append((strId))
-		f.close()
-	except:
-		print 'Stop categories cannot be read!'
-		sys.exit(1)
-
-	return frozenset(catList)
-
-# we store here our additionally cleaned dataset from the preprocessed hgw xml 
-# to outfile as na optional step
-def process_keywords(selected, aid, text, title, cnt_articles, article_ids, train_set_dict, outfile):
-	# use nltk to find english stopwords and tokenize the text
-	# while I need to join the tokens later for the purpose of TfIDFTokenizer, a good thing is that now I still clean the stopwords, 
-	# which, I think, speeds up the CountVectorizer tokenizer later
-	stopset = set(stopwords.words('english'))
-	tokens=word_tokenize(text.decode('utf-8'))
-    	tokens = [w for w in tokens if not w in stopset]
-    # to really do all as Gabrilovich, we remove finally also articles with less than 100 keywords
-	if len(tokens) > 100:
-		train_set_dict[cnt_articles] = ' '.join(tokens)
-		article_ids[cnt_articles] = int(aid)
-		if cnt_articles % 10000 == 0:
-			print cnt_articles, aid, title, len(tokens)
-		if not selected:
-			outfile.write(str(aid) + '\t' + str(cnt_articles) + '\t' + str(title) + '\n')
-		cnt_articles += 1
-	return cnt_articles
-
-# extract page properties or clean the page text from buf
-def process_page(selected, buf, cnt_articles, article_ids, train_set_dict, outfile, asl, STOP_CATS, articles_selected):
-	# prune stop cat given in the file by Cagatay Calli
-	cat = re.search(r'<categories>(.*)</categories>', buf, re.DOTALL)
-	categories = cat.group(1) if cat else None
-	if categories:
-		cat_list = frozenset(categories.split(' '))
-	else:
-		return cnt_articles
-	if not cat_list:
-		return cnt_articles
-	if cat_list.intersection(STOP_CATS):
-		print "Filtered stopcat", cat_list.intersection(STOP_CATS)
-		return cnt_articles
-	# prune all the unecessary pages (articles based on type)
-	if "This is a disambiguation page" in buf:
-		#print "disambiguation"
-		return cnt_articles
-	if "<title>Category:" in buf:
-		#print "category"
-		return cnt_articles
-	if "<title>List of" in buf:
-		return cnt_articles
-	if "<title>Timeline of" in buf:
-		return cnt_articles 
-	if "<title>Template:" in buf:
-		return cnt_articles
-	if "<title>Index of:" in buf:
-		return cnt_articles 
-	page = ET.fromstring(buf)
-	aid = page.attrib['id']
-	outlinks = page.attrib['outlinks']
-	if page.attrib['stub'] == "1":
-		return cnt_articles
-	if int(outlinks) < 5:
-		return cnt_articles
-	if asl[int(aid)] < 5:
-		return cnt_articles
-	t = re.search(r'<title>(.*)</title>', buf, re.DOTALL)
-	title = t.group(1) if t else None
-	if len(title) <= 1:
-		return cnt_articles
-	reOtherNamespace = re.compile("^(User|Wikipedia|File|MediaWiki|Template|Help|Category|Portal|Book|Talk|Special|Media|WP|User talk|Wikipedia talk|File talk|MediaWiki talk|Template talk|Help talk|Category talk|Portal talk):.+",re.DOTALL)
-	if reOtherNamespace.match(title):
-		print "Namespace filtered", title
-		return
-	# if title of the article qualifies as date, prune it, too
-	try:
-		parse(title)
-		#print title
-		return cnt_articles
-	except:
-		ValueError or TypeError
-	# double check for disambiguation since Wiki is not clean
-	if "(disambiguation)" in title:
-		return cnt_articles
-	# also check for numbers
-	if "(number)" in title:
-		return cnt_articles
-	if not int(aid) in articles_selected:
-		outfile.write(str(aid) + '\t' + str(cnt_articles) + '\t' + str(title) + '\n')
-		return cnt_articles
-	# finally, if page passed the pruning phase, extract only its text
-	m = re.search(r'<text>(.*)</text>', buf, re.DOTALL)
-	text = m.group(1) if m else None
-    # I choose not to care about headers and other xml markup that might be left
-	text = re.sub(r'<(.*)>', '', text, re.DOTALL)
-	# for the next step, I need one-line articles, so we replace new lines with spaces
-	text = text.replace('\n', ' ')
-	# finally process the text for non-stopwords (conceptually that code could have been here, but is cleaner this way)
-	cnt_articles = process_keywords(selected, aid, text, title, cnt_articles, article_ids, train_set_dict, outfile)
-	return cnt_articles
-
-
-def process_page_selected(selected, buf, cnt_articles, article_ids, train_set_dict, outfile, asl, STOP_CATS, articles_selected):
-	page = ET.fromstring(buf)
-	aid = page.attrib['id']
-	# prune stop cat given in the file by Cagatay Calli
-	if int(aid) in articles_selected:
-		t = re.search(r'<title>(.*)</title>', buf, re.DOTALL)
-		title = t.group(1) if t else None
-		# finally, if page passed the pruning phase, extract only its text
-		m = re.search(r'<text>(.*)</text>', buf, re.DOTALL)
-		text = m.group(1) if m else None
-	    # I choose not to care about headers and other xml markup that might be left
-		text = re.sub(r'<(.*)>', '', text, re.DOTALL)
-		# for the next step, I need one-line articles, so we replace new lines with spaces
-		text = text.replace('\n', ' ')
-		# finally process the text for non-stopwords (conceptually that code could have been here, but is cleaner this way)
-		cnt_articles = process_keywords(selected, aid, text, title, cnt_articles, article_ids, train_set_dict, outfile)
-	return cnt_articles
-
-
-# f_in is the hgw xml file which is the output by Gabrilovich wikiprep
-# f_articles_out is a file in which we save article titles and article ids, to be able to read them in to Mongo later, too.
-# that will be our helping collection in Mongo, since we want to know what are the titles of the relevant concepts for words.
-def process_hgw_xml(selected = False, f_in = "Gabrliovich_preprocessed/20051105_pages_articles.hgw.xml",f_articles_out = "output/AID_titles_wrong.tsv"):
-	if selected:
-		articles_selected = read_selected_Gab()
-	else:
-		articles_selected = None
-	asl = read_inlinks()
-	STOP_CATS = read_stop_cats()
-	# count how many articles (i.e., lines) are read
-	outfile = open(f_articles_out,'w')
-	outfile.write('_id' + '\t' + 'our_id' + '\t' + 'title' + '\n')
-	cnt_articles = 0
-	cnt_all_articles = 0
-	article_ids = defaultdict(int)
-	train_set_dict = defaultdict(int) 
-	inputbuffer = ''
-	with open(f_in,'r') as input_file:
-		# the code loops through the input, forms pages when they are found, and sends them to process_page for further steps
-	    append = False
-	    for line in input_file:	
-			if '<page id=' in line:
-				inputbuffer = line
-				append = True
-	  		elif '</page>' in line:
-				inputbuffer += line
-				cnt_all_articles += 1
-	 			append = False
-				try:
-					cnt_articles = process_page_selected(selected, inputbuffer, cnt_articles, article_ids, train_set_dict, outfile, asl, STOP_CATS, articles_selected)
-				except TypeError as e:
-					print e
-				inputbuffer = None
-				del inputbuffer #probably redundant...
-			elif append:
-				inputbuffer += line
-	outfile.close()
-	print "INSERTED articles: ", cnt_articles, "ALL READ articles: ", cnt_all_articles
-	return cnt_articles, article_ids, train_set_dict
-
-
-#####################################################################################################################
-# test directly Gabrilovich articles only
-
-def read_selected_Gab(f_in = "Gabrliovich_preprocessed/selected.txt"):
-	sel_articles = []
-	with open(f_in,'r') as input_file:
-		for line in input_file:
-			sel_articles.append(int(line))
-	return sel_articles
-#####################################################################################################################
-
 
 #####################################################################################################################
 
-# 2 Read in the data preprocessed by wikiextractor by Prof. Attardi 
-# http://medialab.di.unipi.it/wiki/Wikipedia_Extractor
-def read_in_wikiextractor_output(path="output/wikiALL_titles_url_out_no_templates"):
+NON_STOPWORD_LIMIT = 200
+STEMMER = SnowballStemmer("english", ignore_stopwords=True )
 
-	# count how many articles (i.e., lines) are read
-	cnt_articles = 0
-	article_ids = defaultdict(int)
-	train_set_dict = defaultdict(int)
-	# I adapted wikiextractor to output one article per single line
-	# here we read in such output
-	# read in all the files from all the folders (Attardi divides output in many files in many folders)
-	for dirin_name in os.listdir(path):
-		print dirin_name
-		dirin_name_full = os.path.join(path, dirin_name)
-		for fin_name in os.listdir(dirin_name_full):
-			#print fin_name
-			fin_name_full = os.path.join(dirin_name_full, fin_name)
-			print fin_name_full
-			fin = open(fin_name_full,"r")
-			# for each article i.e., line
-			for line in fin:
-				# disambiguation page check
-				suffix = "may refer to:"
-				if not (line[:-1].endswith(suffix)):
-					line = line[:-1].split(" ")
-					# article minimum length check
-					if (len(line) >= 200):
-						# take first number in the line, that is the id
-						aid = line[0]
-						# second element is the url
-						aurl = line[1]
-						# join back (not so efficient) the rest of the line
-						aline = " ".join(line[2:])
-						# the dictionaries save what they need to save
-						article_ids[cnt_articles] = int(aid)
-						# append the line == article text to train set
-						train_set_dict[cnt_articles] = aline
-						cnt_articles += 1
-			fin.close()
-	print "INSERTED articles: ", cnt_articles
-	return cnt_articles, article_ids, train_set_dict
-#####################################################################################################################
-
+def stem_article( article ):
+	stemmed_tokens = []
+	for token in wordpunct_tokenize( article ):
+		token = token.lower()
+		if token.isalpha():
+			stemmed_tokens.append( STEMMER.stem( token ) )
+	return ' '.join( stemmed_tokens )
 
 #####################################################################################################################
 # TF-IDF
@@ -362,21 +132,36 @@ def read_in_wikiextractor_output(path="output/wikiALL_titles_url_out_no_template
 # cnt_articles is the number of articles we kept after preprocessign and cleaning the Wikipedia data
 # article_ids is a dictionary with cnt_articles items: Wiki article ids, indexed by our internal ids
 # train_set_dict is a dictionary with cnt_articles items: cleaned texts of Wiki articles, indexed by our internal ids
-def tfidf_normalize(cnt_articles, article_ids, train_set_dict):
-	# use the whole (Wiki) set as both the train and test set
-	train_set = train_set_dict.values()
-	test_set = train_set
+def tfidf_normalize(articles_with_id):
+	global NON_STOPWORD_LIMIT
+	stemmed_articles_with_id = [ (aid, stem_article( article )) for (aid, article) in articles_with_id ]
+	stemmed_articles = [ article for (aid, article) in stemmed_articles_with_id ]
+	#test_set = train_set
 	# instantiate vectorizer with English language, using stopwords and set min_df, max_df parameters and the tokenizer
-	vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.7, token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b')
+	vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.1, token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b')
 	# by appling the vectorizer instance to the train set
 	# it will create a vocabulary from all the words that appear in at least min_df and in no more than max_df
 	# documents in the train_set
-	vectorizer.fit_transform(train_set)
+	vectorizer.fit_transform(stemmed_articles)
 	# vectorizer transform will apply the vocabulary from the train set to the test set. In my case,
 	# they are the same set: whole Wikipedia.
 	# this means that each article will get representation based on the words from the vocabulary and
 	# their TF-IDF values in the Scipy sparse output matricx
-	freq_term_matrix = vectorizer.transform(test_set)
+	freq_term_matrix = vectorizer.transform(stemmed_articles)
+	long_articles_with_id = []
+	assert freq_term_matrix.shape[0] == len(articles_with_id)
+	for (i, article_with_id) in zip( xrange(freq_term_matrix.shape[0]), stemmed_articles_with_id ): 
+		row = freq_term_matrix.getrow(i)
+		if row.getnnz() >= NON_STOPWORD_LIMIT:
+			long_articles_with_id.append( article_with_id )
+
+	long_articles = [ article for (aid, article) in long_articles_with_id ]
+
+	vectorizer = CountVectorizer(stop_words='english', min_df=3, max_df=0.1, token_pattern=r'\b[a-zA-Z][a-zA-Z]+\b')
+	vectorizer.fit_transform(long_articles)
+
+	freq_term_matrix = vectorizer.transform(long_articles)
+
 	# Gabrilovich says that they threshold TF on 3 (remove word-article association if that word
 	# does not appear at least 3 times in that single article
 	#freq_term_matrix.data *= freq_term_matrix.data>=3
@@ -390,18 +175,18 @@ def tfidf_normalize(cnt_articles, article_ids, train_set_dict):
 	tfidf.fit(freq_term_matrix)
 	# finally, tfidf will calculate TFIDF values with transform()
 	tf_idf_matrix = tfidf.transform(freq_term_matrix)
-	tf_idf_matrix.data = np.log(np.log(tf_idf_matrix.data))
+	# tf_idf_matrix.data = np.log(np.log(tf_idf_matrix.data))
 	tf_idf_matrix = normalize(tf_idf_matrix, norm="l2", axis = 0, copy=False)
 	# now we put our matrix to CSC format (as it helps with accessing columns for inversing the vectors to
 	# words' concept vectors)
-	CSC_matrix = tf_idf_matrix.tocsc() 
+	tf_idf_matrix = tf_idf_matrix.tocsc() 
 	# we need vocabulary_ to be accessible by the index of the word so we inverse the keys and values of the
 	#dictionary and put them to new dictionary word_index
 	word_index = dict((v, k) for k, v in vectorizer.vocabulary_.iteritems())
-	M, N = CSC_matrix.shape
+	M, N = tf_idf_matrix.shape
 	print "Articles: ", M
 	print "Words: ", N
-	return M, N, CSC_matrix, word_index
+	return tf_idf_matrix, word_index, long_articles_with_id
 
 
 # 2 Raw TF-IDF values (Hieu)

@@ -6,10 +6,22 @@ import copy
 from bson.objectid import ObjectId
 from pydoc import help
 from scipy.stats.stats import pearsonr, spearmanr
+from nltk.tokenize import wordpunct_tokenize
+from nltk.corpus import stopwords
+from nltk.stem.snowball import SnowballStemmer
+
+STEMMER = SnowballStemmer("english", ignore_stopwords=True )
+
+def stem_word(token):
+	token = token.lower()
+	return STEMMER.stem( token ) 
 
 # function takes any two words, looks up their CVs in the collection
 # exctracts the CVs and invokes standard vector cosine similarity
 def SR_2words(w1, w2):
+	w1 = stem_word(w1)
+	w2 = stem_word(w2)
+	print w1, w2
 	CV, AID7s = connection_params()
 	cv1 = CV.find_one({"_id": w1})
 	cv2 = CV.find_one({"_id": w2})
@@ -74,6 +86,7 @@ def extract_CV(cv):
 
 
 def print_topN_concepts(w, topN):
+	w = stem_word(w)
 	CV, AID7s = connection_params()
 	print CV
 	print AID7s
@@ -114,11 +127,11 @@ def evaluate_Wiki_DB_against_human():
 		w1 = el[0][0]
 		w2 = el[0][1]
 		h_SR = el[1]
-		Wiki_SR = SR_2words(w1.lower(), w2.lower())
+		Wiki_SR = SR_2words(stem_word(w1), stem_word(w2))
 		if Wiki_SR <> -1:
 			human_SR_lst.append(h_SR)
 			Wiki_SR_lst.append(Wiki_SR)
-		print w1, w2, h_SR, Wiki_SR
+			print w1, w2, h_SR, Wiki_SR
 	print human_SR_lst
 	print Wiki_SR_lst
 	print "Full Wiki Pearson ", pearsonr(human_SR_lst, Wiki_SR_lst)
@@ -129,7 +142,7 @@ def evaluate_Wiki_DB_against_human():
 #############################################################################################
 # take the right COLLECTION = TF-IDF based concept vectors (CV) -- output from tfidf.py
 #############################################################################################
-def connection_params(client = MongoClient(), dbs="test", CV_collection="CV_Gab2005_true_selected_by_Gab_pruned_loglog", aid_collection="v3_AID"):
+def connection_params(client = MongoClient(), dbs="test", CV_collection="CV_stemmed_pruned", aid_collection="AID"):
 	# connect to Mongo db test
 	client = MongoClient()
 	db = client[dbs]
@@ -138,6 +151,7 @@ def connection_params(client = MongoClient(), dbs="test", CV_collection="CV_Gab2
 	return CV, AID7s
 #############################################################################################
 
+evaluate_Wiki_DB_against_human()
 
 # TEST
 print_topN_concepts("weather", 7)
@@ -145,3 +159,10 @@ print_topN_concepts("weather", 7)
 SR_2words("weather", "forecast")
 
 evaluate_Wiki_DB_against_human()
+
+SR_2words("sensor", "computing")
+
+SR_2words("gemstone", "jewelry")
+
+
+SR_2words("exchange", "market")

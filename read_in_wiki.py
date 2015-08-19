@@ -247,7 +247,7 @@ def read_in_STOP_CATS(f_n = "/media/sscepano/Data/Wiki2015/STOPCAT/STOP_CATS.txt
 
 def connect_2_db():
 	try:
-		cnx = mysql.connector.connect(user='root', password='7s',
+		cnx = mysql.connector.connect(user='test', password='test',
 	                              host='127.0.0.1',
 	                              database='wiki_category_links')
 	except mysql.connector.Error as err:
