@@ -3,6 +3,7 @@ Implementation of ESA in Python using MongoDB and sql table from Wiki dumps for 
 
 This code calculates a knowledge base that can be used to calculate semantic relatendess (SR) from Wikipedia data
 according to Explicit Semantic Analysis (ESA) algorithm (Gabrilovich et al. 2007).
+
 Theory:
 Basic idea of ESA is that the more similar the words are, they will be found in more common Wikipedia articles.
 And the importance of a word in an article is also taken into account; determined using TF-IDF (term frequency -
@@ -11,7 +12,10 @@ importance of different words (terms) in different articles using TF-IDF algorit
 of vectors for each Wikipedia article (concept) with corresponding TF-IDF values for words that are found relevant
 in this article. Then the inverse vector for each word is calculated (containing its TF-IDF values in different
 articles), and such a vector serves to calculate SR value of the words. 
+
+
 Implementation:
+
 Preprocessing: Wikipedia data comes in xml format and can be quite messy. Thus we need to clean it (preprocess).
 The preprocessing step is described below separately.
 TF-IDF calculation: We calculate TF-IDF for the non-stopwords words in all the articles. We use sklearn
@@ -54,12 +58,14 @@ concept vector by Tf-IDF, and cut when the differnce between the first and last 
 If we want to compare words based on similar concepts, then we probably also want those to have similar TF-IDF scales. 
 Ok, article lengths also represent to us their importance in "general" in some way. perhaps :)
 - threshold the TF-IDF values with 12 based on (Hieu et al. 2013)
+- 
+
 References
 ----------
 Gabrilovich, Evgeniy, and Shaul Markovitch. "Computing Semantic Relatedness Using Wikipedia-based Explicit Semantic
 Analysis." IJCAI. Vol. 7. 2007.
-Gabrilovich, Evgeniy, and Shaul Markovitch. "Wikipedia-based semantic interpretation for natural language processing."
-Journal of Artificial Intelligence Research (2009): 443-498.
+
+Gabrilovich, Evgeniy, and Shaul Markovitch. "Wikipedia-based semantic interpretation for natural language processing." Journal of Artificial Intelligence Research (2009): 443-498.
+
 Hieu, Nguyen Trung, Mario Di Francesco, and Antti Ylä-Jääski. "Extracting knowledge from wikipedia articles through
-distributed semantic analysis." Proceedings of the 13th International Conference on Knowledge Management and Knowledge
-Technologies. ACM, 2013.
+distributed semantic analysis." Proceedings of the 13th International Conference on Knowledge Management and Knowledge Technologies. ACM, 2013.
