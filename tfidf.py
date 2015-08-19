@@ -390,6 +390,7 @@ def tfidf_normalize(cnt_articles, article_ids, train_set_dict):
 	tfidf.fit(freq_term_matrix)
 	# finally, tfidf will calculate TFIDF values with transform()
 	tf_idf_matrix = tfidf.transform(freq_term_matrix)
+	tf_idf_matrix.data = np.log(np.log(tf_idf_matrix.data))
 	tf_idf_matrix = normalize(tf_idf_matrix, norm="l2", axis = 0, copy=False)
 	# now we put our matrix to CSC format (as it helps with accessing columns for inversing the vectors to
 	# words' concept vectors)
@@ -463,7 +464,7 @@ def tfidf_raw(cnt_articles, article_ids, train_set_dict):
 # go through columns and print the word and the indices (= article_id) and the column data (= tfidf)
 
 # 1 save with sliding window pruning (Gabrilovich)
-def save_CV_with_sliding_window_pruning(m, fn, word_index, article_ids, window=100, drop_pct=5):
+def save_CV_with_sliding_window_pruning(m, fn, word_index, article_ids, window=100, drop_pct=0.5):
 	M, N = m.shape
 	CNT = 0
 	chck_pruning = 0

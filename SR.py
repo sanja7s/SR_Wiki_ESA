@@ -34,6 +34,7 @@ def cosine_2vectors_full(v1, v2):
 	different2_keys = keys_2 - keys_1
 	different1_keys = keys_1 - keys_2
 	common_keys = keys_1 & keys_2
+	#print common_keys
 	# for common keys, we calculate formula as is
 	# SR = v1.v2 / ||v1|| ||v2||
 	for term in common_keys:
@@ -88,12 +89,18 @@ def print_topN_concepts(w, topN):
 		print term[1], article_name
 
 
-def read_in_human_judgement(file_name = "SR_human_similarity/combined.tab"):
+def read_in_human_judgement(file_name = "SR_human_similarity/Mturk.csv"):
+	if '.csv' in file_name:
+		sep = ','
+	else:
+		sep = '\t'
 	f = open(file_name, "r")
 	human_SR = defaultdict(int)
-	header = f.readline()
+	#header = f.readline()
 	for line in f:
-		w1, w2, SR = line.split('\t')
+		#w1, w2, SR = line.split('\t')
+		els = line.split(sep)
+		w1, w2, SR = els[0], els[1], els[2]
 		human_SR[(w1,w2)] = float(SR)
 	return human_SR
 
@@ -111,8 +118,9 @@ def evaluate_Wiki_DB_against_human():
 		if Wiki_SR <> -1:
 			human_SR_lst.append(h_SR)
 			Wiki_SR_lst.append(Wiki_SR)
-		# else:
 		print w1, w2, h_SR, Wiki_SR
+	print human_SR_lst
+	print Wiki_SR_lst
 	print "Full Wiki Pearson ", pearsonr(human_SR_lst, Wiki_SR_lst)
 	print
 	print "Full Wiki Spearman ", spearmanr(human_SR_lst, Wiki_SR_lst)
@@ -121,7 +129,7 @@ def evaluate_Wiki_DB_against_human():
 #############################################################################################
 # take the right COLLECTION = TF-IDF based concept vectors (CV) -- output from tfidf.py
 #############################################################################################
-def connection_params(client = MongoClient(), dbs="test", CV_collection="CV_Gab2005_selected_by_Gab_pruned", aid_collection="v3_AID"):
+def connection_params(client = MongoClient(), dbs="test", CV_collection="CV_Gab2005_true_selected_by_Gab_pruned_loglog", aid_collection="v3_AID"):
 	# connect to Mongo db test
 	client = MongoClient()
 	db = client[dbs]
