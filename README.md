@@ -4,7 +4,7 @@ Implementation of ESA in Python using MongoDB and sql table from Wiki dumps for 
 This code calculates a knowledge base that can be used to calculate semantic relatendess (SR) from Wikipedia data
 according to Explicit Semantic Analysis (ESA) algorithm (Gabrilovich et al. 2007).
 
-Theory:
+-- Theory:
 Basic idea of ESA is that the more similar the words are, they will be found in more common Wikipedia articles.
 And the importance of a word in an article is also taken into account; determined using TF-IDF (term frequency -
 inverse document frequency) algorithm. Thus the ESA algorithm takes (latest) Wikipedia dump and determines
@@ -14,11 +14,14 @@ in this article. Then the inverse vector for each word is calculated (containing
 articles), and such a vector serves to calculate SR value of the words. 
 
 
-Implementation:
+-- Implementation:
 
-Preprocessing: Wikipedia data comes in xml format and can be quite messy. Thus we need to clean it (preprocess).
+-- Preprocessing:
+Wikipedia data comes in xml format and can be quite messy. Thus we need to clean it (preprocess).
 The preprocessing step is described below separately.
-TF-IDF calculation: We calculate TF-IDF for the non-stopwords words in all the articles. We use sklearn
+
+-- TF-IDF calculation: 
+We calculate TF-IDF for the non-stopwords words in all the articles. We use sklearn
 TfidfTransformer that builds a vocabulary omitting English stop_words (experimenting with minimum document frequency
 for a word, and maximum percent of articles in which the word appears -- more details on this under Parameters).
 TfidfTransformer outputs a sparse scipy matrix that has words as columns, articles as rows, and corresponding TF-IDF
@@ -30,7 +33,8 @@ suitable to be imported to MongoDB, where our knowledge base is to be stored (no
 object is 16MB). Each josn line is a word CV (concept vector).
 Articles #:  1829625
 Words #:  1294606
-Preprocessing:
+
+-- Preprocessing:
 Wikipedia xml dump that we use is the English dump with pages and articles enwiki-20150304-pages-articles.xml.bz2.
 However, there are Templates to be expanded (that can get problematic and lead to recursion issues). Then there are
 redirections to be resolved. Then we also need to extract the pages with more then 5 inlinks and outlinks.
@@ -56,9 +60,7 @@ concept vector by Tf-IDF, and cut when the differnce between the first and last 
 5% from the highest TF-IDF value in this concept vector <=> sudden drop)
 2 Hieu's method (Hieu et al. 2013) is not normalized: no log transformation, just use raw TF values. 
 If we want to compare words based on similar concepts, then we probably also want those to have similar TF-IDF scales. 
-Ok, article lengths also represent to us their importance in "general" in some way. perhaps :)
-- threshold the TF-IDF values with 12 based on (Hieu et al. 2013)
-- 
+Ok, article lengths also represent to us their importance in "general" in some way. perhaps :) threshold the TF-IDF values with 12 based on (Hieu et al. 2013)
 
 References
 ----------
