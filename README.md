@@ -13,14 +13,17 @@ of vectors for each Wikipedia article (concept) with corresponding TF-IDF values
 in this article. Then the inverse vector for each word is calculated (containing its TF-IDF values in different
 articles), and such a vector serves to calculate SR value of the words. 
 
-
 -- Implementation:
 
--- Preprocessing:
+Main modules: [Read more words!](ESA.py), (ESA_1.py for testing the actual data provided by Gabrilovich; or ESA_selected.py for also actually selected articles).
+
+- Preprocessing*:
 Wikipedia data comes in xml format and can be quite messy. Thus we need to clean it (preprocess).
 The preprocessing step is described below separately.
 
--- TF-IDF calculation: 
+read_in_wiki.py contains modules to read in different data formats (I tested Gabrilovich preprocessed data; also code by https://github.com/faraday and finally, for newer Wikipedia dumps, I used preprocessor by https://github.com/attardi/wikiextractor)
+
+- TF-IDF calculation: 
 We calculate TF-IDF for the non-stopwords words in all the articles. We use sklearn
 TfidfTransformer that builds a vocabulary omitting English stop_words (experimenting with minimum document frequency
 for a word, and maximum percent of articles in which the word appears -- more details on this under Parameters).
@@ -34,7 +37,9 @@ object is 16MB). Each josn line is a word CV (concept vector).
 Articles #:  1829625
 Words #:  1294606
 
--- Preprocessing:
+tfidf.py does actualy TF-IDF calculation using python scipy and sklearn
+
+* Details of preprocessing:
 Wikipedia xml dump that we use is the English dump with pages and articles enwiki-20150304-pages-articles.xml.bz2.
 However, there are Templates to be expanded (that can get problematic and lead to recursion issues). Then there are
 redirections to be resolved. Then we also need to extract the pages with more then 5 inlinks and outlinks.
