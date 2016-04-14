@@ -1,6 +1,8 @@
 # SR_Wiki_ESA
 Implementation of ESA in Python using MongoDB and sql table from Wiki dumps for categories.
 
+https://zenodo.org/badge/latestdoi/21450/sanja7s/SR_Wiki_ESA
+
 This code calculates a knowledge base that can be used to calculate semantic relatendess (SR) from Wikipedia data
 according to Explicit Semantic Analysis (ESA) algorithm (Gabrilovich et al. 2007).
 
